@@ -147,9 +147,15 @@ export function VaultsList() {
     refresh: load,
   } = usePagedList<Vault>("/v1/vaults", { defaultPageSize: 20 });
 
-  // Listen for OAuth popup completion
-  const handleOAuthMessage = useCallback((event: MessageEvent) => {
-    if (event.data?.type === "oauth_complete" && selectedVault) {
+  // Listen for OAuth popup completion. Two transports because COOP severs
+  // window.opener for providers like Sentry (which set
+  // Cross-Origin-Opener-Policy: same-origin on their authorize page) —
+  // postMessage from the popup back to us doesn't work in that case.
+  // BroadcastChannel is same-origin and survives COOP, so use it as a
+  // parallel channel; the popup posts to both. Either firing is enough.
+  const handleOAuthMessage = useCallback((event: MessageEvent | { data: unknown }) => {
+    const data = (event as { data?: { type?: string } }).data;
+    if (data?.type === "oauth_complete" && selectedVault) {
       setConnecting(null);
       setShowAddCred(false);
       openVault(selectedVault);
@@ -159,7 +165,20 @@ export function VaultsList() {
 
   useEffect(() => {
     window.addEventListener("message", handleOAuthMessage);
-    return () => window.removeEventListener("message", handleOAuthMessage);
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("openma-oauth");
+      bc.addEventListener("message", handleOAuthMessage);
+    } catch {
+      // Old browser without BroadcastChannel — fall back to postMessage only.
+    }
+    return () => {
+      window.removeEventListener("message", handleOAuthMessage);
+      if (bc) {
+        bc.removeEventListener("message", handleOAuthMessage);
+        bc.close();
+      }
+    };
   }, [handleOAuthMessage]);
 
   const createVault = async () => {

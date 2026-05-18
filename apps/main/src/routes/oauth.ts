@@ -583,17 +583,46 @@ app.get("/callback", async (c) => {
   redirectUrl.searchParams.set("oauth", "success");
   redirectUrl.searchParams.set("service", serverName);
 
-  // If opened in a popup, close it and notify parent
+  // If opened in a popup, close it and notify parent.
+  //
+  // Two transports because COOP can sever window.opener:
+  //   1. window.opener.postMessage — works when the OAuth provider doesn't
+  //      set Cross-Origin-Opener-Policy headers (Linear, Notion, Airtable).
+  //   2. BroadcastChannel("openma-oauth") — survives COOP severance because
+  //      it uses same-origin browser bus, not the popup→parent reference.
+  //      Required for Sentry (COOP: same-origin), GitHub etc., effectively
+  //      anything large enough to set COOP defensively. Both popup and
+  //      parent are same-origin (app.openma.dev / app.staging.openma.dev),
+  //      so the channel is delivered.
+  //
+  // We always try both, then close. The fallback `location.href` only fires
+  // if neither transport is available (very old browser, scripts disabled,
+  // etc.) — by 2026 this should be unreachable.
   return c.html(`
     <html><body>
-    <p>Connected to ${serverName}. Redirecting...</p>
+    <p>Connected to ${serverName}. Closing…</p>
     <script>
-      if (window.opener) {
-        window.opener.postMessage({ type: "oauth_complete", service: "${serverName}", vault_id: "${oauthState.vault_id}" }, "*");
-        window.close();
-      } else {
-        window.location.href = "${redirectUrl.toString()}";
-      }
+      (function(){
+        var msg = { type: "oauth_complete", service: "${serverName}", vault_id: "${oauthState.vault_id}" };
+        var notified = false;
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(msg, "*");
+            notified = true;
+          }
+        } catch (e) {}
+        try {
+          var bc = new BroadcastChannel("openma-oauth");
+          bc.postMessage(msg);
+          bc.close();
+          notified = true;
+        } catch (e) {}
+        if (notified) {
+          window.close();
+        } else {
+          window.location.href = ${JSON.stringify(redirectUrl.toString())};
+        }
+      })();
     </script>
     </body></html>
   `);
