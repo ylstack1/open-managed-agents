@@ -84,6 +84,36 @@ export function VaultsList() {
   const [refreshSectionOpen, setRefreshSectionOpen] = useState(false);
   const [clientCredsSectionOpen, setClientCredsSectionOpen] = useState(false);
 
+  // Reset the Add-credential form whenever the modal opens. The Modal's
+  // onClose handler resets too, but Radix only fires it for user-initiated
+  // closes (Esc, click-outside) — programmatic `setShowAddCred(false)`
+  // calls (success paths, Cancel button) bypass it, leaving state from the
+  // previous open. Resetting on open covers every entry path.
+  useEffect(() => {
+    if (!showAddCred) return;
+    setCustomForm({
+      name: "",
+      type: "oauth",
+      url: "",
+      pickedName: "",
+      pickedIcon: "",
+      token: "",
+      refreshToken: "",
+      tokenEndpoint: "",
+      authMethod: "client_secret_post",
+      clientId: "",
+      clientSecret: "",
+    });
+    setTokenSectionOpen(false);
+    setRefreshSectionOpen(false);
+    setClientCredsSectionOpen(false);
+    // Also clear any stale connecting indicator from a prior session that
+    // was X'd out mid-OAuth — otherwise the Connect button stays disabled
+    // forever because submitCustom's setConnecting(null) only runs on the
+    // success path.
+    setConnecting(null);
+  }, [showAddCred]);
+
   // Add-CLI form (cap_cli credentials). Visible inside the unified
   // Add-credential modal under the "CLI" tab.
   const [cliForm, setCliForm] = useState({
