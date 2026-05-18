@@ -347,13 +347,16 @@ function A1CredentialsStep(props: {
         </p>
         <div className="rounded-md border border-border bg-bg-surface/30 divide-y divide-border">
           <CopyRow label="App name" value={props.form.suggestedAppName} />
+          <CopyRow label="Developer URL" value="https://openma.dev" />
           <CopyRow label="Callback URL" value={props.form.callbackUrl} />
           <CopyRow label="Webhook URL" value={props.form.webhookUrl} />
         </div>
         <p className="text-[12px] text-fg-subtle mt-2">
-          Linear auto-generates the webhook signing secret on its side and ignores
-          any value pasted into the form. You'll copy it back to OMA in the next
-          step (it starts with <code>lin_wh_</code>).
+          Linear's form also asks for Developer Name (any value — your team name
+          works) and Description (optional). Linear auto-generates the webhook
+          signing secret on its side and ignores any value pasted into the form.
+          You'll copy it back to OMA in the next step (it starts with{" "}
+          <code>lin_wh_</code>).
         </p>
       </section>
 
