@@ -160,11 +160,11 @@ export function LocalCombobox<T>({
         createPortal(
           <>
             <div
-              className="fixed inset-0 z-[9998]"
+              className="fixed inset-0 z-[9998] pointer-events-auto"
               onMouseDown={() => setOpen(false)}
             />
             <div
-              className="fixed bg-bg border border-border rounded-md shadow-xl z-[9999] overflow-y-auto"
+              className="fixed bg-bg border border-border rounded-md shadow-xl z-[9999] overflow-y-auto pointer-events-auto"
               style={{ top: rect.top, left: rect.left, width: rect.width, maxHeight }}
             >
               {matches.length === 0 ? (
