@@ -228,11 +228,17 @@ export class SlackProvider implements IntegrationProvider {
     const clientId = ((payload.clientId as string) ?? "").trim();
     const clientSecret = rawClientSecret.trim();
     const signingSecret = rawSigningSecret.trim();
-    // TEMP diagnostic: bad_client_secret reproduces in prod even though MCP
-    // path with same App works. Log lengths (not values) to confirm whether
-    // 4 chars are being eaten before reaching here. Remove once root-caused.
+    // TEMP diagnostic — DO NOT MERGE. Logs the literal credentials so we
+    // can compare to what the user pasted and what Slack expects. Staging
+    // only; revert before this branch lands on main. (Tracked in commit
+    // message — grep for 'TEMP diagnostic' to find the revert target.)
     console.log(
-      `[slack.submitCreds.diag] clientId.len=${clientId.length} clientSecret.raw=${rawClientSecret.length} clientSecret.trim=${clientSecret.length} signingSecret.raw=${rawSigningSecret.length} signingSecret.trim=${signingSecret.length}`,
+      `[slack.submitCreds.diag] clientId=<${clientId}> (len=${clientId.length}) ` +
+        `clientSecret raw=<${rawClientSecret}> (len=${rawClientSecret.length}) ` +
+        `trim=<${clientSecret}> (len=${clientSecret.length}) ` +
+        `signingSecret raw=<${rawSigningSecret}> (len=${rawSigningSecret.length}) ` +
+        `trim=<${signingSecret}> (len=${signingSecret.length}) ` +
+        `clientSecret.bytes=${Array.from(new TextEncoder().encode(clientSecret)).map((b) => b.toString(16).padStart(2, "0")).join("")}`,
     );
     if (!formToken || !clientId || !clientSecret || !signingSecret) {
       throw new Error(
