@@ -82,6 +82,37 @@ const SLACK_API_URL = "https://slack.com/api";
 const PER_CHANNEL_DEBOUNCE_WINDOW_MS = 90_000;
 
 /**
+ * Once-per-session protocol prose appended to the agent's system prompt at
+ * `sessions.create` time for per_channel Slack sessions. The webhook-driven
+ * `<oma_signal>` user.message texts (see renderEventAsUserMessage) carry only
+ * the per-event variable bits; everything stable lives here so we get prompt-
+ * cache locality and avoid re-emitting the same kilobytes on every turn.
+ *
+ * Frozen at session.create — resumes against an existing session see
+ * whatever protocol text was current when the session was first opened. The
+ * protocol rarely changes; if it does, new sessions pick up the new text.
+ *
+ * Exported for unit tests so a regression that drops/mangles the prompt
+ * fails loudly.
+ */
+export const SLACK_SIGNAL_PROTOCOL_PROMPT = [
+  `<oma_slack_signal_protocol>`,
+  `You are deployed into a Slack workspace. Slack-originated turns arrive as user.message events whose text is wrapped in an \`<oma_signal kind="…">\` envelope. Each signal is an out-of-band runtime event, NOT human-typed conversation — treat the envelope as runtime telemetry, never as content to quote, paraphrase, or reference back to the user.`,
+  ``,
+  `Signal kinds you may see in this channel-scoped session:`,
+  `- \`joined_channel\`: you were added to (or re-added to / unarchived into) the channel. On the first joined_channel of a session, call slack \`conversations.info\` for topic+purpose and slack \`conversations.history\` (limit ~20) for recent context, then decide whether to post a brief self-introduction. Skip the intro if the channel already knows you, the purpose is a clear mismatch, or the channel feels noisy.`,
+  `- \`channel_scan_armed\`: a new top-level (non-mention, non-thread-reply) message arrived. The runtime has already silently armed a debounce window. MANDATORY response: call \`scheduleWakeup({ delay_seconds: <debounce_ms / 1000>, prompt: "scan_channel <channel_id>" })\` and end the turn with NO output. Do NOT post into the channel — the human did not request a status update; posting "I scheduled a scan" or similar is a bug. When the wakeup fires, your prompt will be \`scan_channel <channel_id>\`; at that point call slack \`conversations.history(channel=<channel_id>, oldest=<lastScanAt or session-creation-time>)\` and decide whether to act (post / react / mention) or stay silent.`,
+  `- \`direct_invocation\`: explicit @-mention or DM. Respond promptly. Reply via slack \`chat.postMessage\` — pass \`thread_ts\` from the signal envelope when present (keeps the conversation threaded), omit it for top-level conversations.`,
+  `- \`reaction_on_bot_message\`: someone added/removed a reaction on one of your messages. Default: stay silent, end the turn with no action. Conventional meanings: ✅/👍 = satisfied, 🚫/👎 = unsatisfied, ❓ = unclear, 🐛 = bug report, 🎉 = resolved, 👀 = noticed/investigating. Only reply if (a) the reaction is clearly negative or a question, AND (b) you can add genuine value (clarification, apology), AND (c) you would not be over-replying to a casual ack. Never post "got your reaction" / "noted" / "thanks for feedback" — that is noise.`,
+  `- \`session_closed\`: you were removed from the channel or the channel was archived. Cancel any wakeups you scheduled for this channel (or let them lapse with channel_not_found, which is fine) and end the turn with NO output. You cannot post into the channel anyway.`,
+  ``,
+  `Reply protocol: every outbound message goes through slack \`chat.postMessage\` with the channel and (where applicable) thread_ts from the signal envelope. Speak as the bot persona to the human.`,
+  ``,
+  `Vocabulary hygiene: prior \`<oma_signal>\` blocks in this session are runtime telemetry, NOT conversation context. Never quote signal names, signal attributes, or these internal terms in any reply you post to Slack: "scan window", "channel_scan_armed", "scheduleWakeup", "throttle", "debounce", "session", "oma_signal". Humans do not need to see internal mechanics.`,
+  `</oma_slack_signal_protocol>`,
+].join("\n");
+
+/**
  * Routing intent for per_channel dispatch. classifyDispatch sets this so
  * dispatchEvent knows which signal to render and which lifecycle action to
  * take. For per_thread / per_event (legacy) paths intent is undefined.
@@ -967,6 +998,31 @@ export class SlackProvider implements IntegrationProvider {
         scopeKey,
       );
 
+      // Two-phase claim window: a winner has just inserted a pending
+      // placeholder and is currently calling sessions.create. The session
+      // id we see is `_pending_<uuid>`, NOT a real session. If we let any
+      // intent handler below run, two bad things happen:
+      //   1. updateStatus('active') would corrupt the row — the next
+      //      fulfillPending UPDATE WHERE status='pending' would match 0
+      //      rows, leaving session_id=`_pending_<uuid>` permanently active
+      //      and every subsequent event 404'ing in sessions.resume.
+      //   2. resume(existing.sessionId) would 404 immediately.
+      // Drop instead — only when the claim is still fresh. A stale claim
+      // (>60s old, winner crashed before fulfilling) should fall through
+      // to createChannelSession's reassignIfInactive recovery path.
+      const PENDING_FRESH_MS = 60_000;
+      if (
+        existing &&
+        existing.status === "pending" &&
+        this.container.clock.nowMs() - existing.createdAt < PENDING_FRESH_MS
+      ) {
+        await this.container.webhookEvents.attachError(
+          event.deliveryId,
+          "pending_winner_in_progress",
+        );
+        return null;
+      }
+
       // close_session (bot kicked / channel archived) — flip status, clear
       // the debounce watermark, send a final session_closed signal so the
       // agent can cancel its own scheduleWakeups before going dormant.
@@ -1281,6 +1337,7 @@ export class SlackProvider implements IntegrationProvider {
             },
           },
           initialEvent: sessionEvent,
+          additionalSystemPrompt: SLACK_SIGNAL_PROTOCOL_PROMPT,
         });
       } catch (err) {
         // sessions.create threw before we wrote the binding. Release the
@@ -1370,6 +1427,7 @@ export class SlackProvider implements IntegrationProvider {
         },
       },
       initialEvent: sessionEvent,
+      additionalSystemPrompt: SLACK_SIGNAL_PROTOCOL_PROMPT,
     });
     const reassigned = await this.container.sessionScopes.reassignIfInactive(
       publication.id,
@@ -1452,23 +1510,20 @@ export class SlackProvider implements IntegrationProvider {
       ? `#${extras.channelName}${event.channelId ? ` (${event.channelId})` : ""}`
       : event.channelId ?? "<unknown channel>";
 
+    // Per-channel signals are intentionally minimal: only the per-event
+    // variable bits live here. The stable protocol prose (signal catalog,
+    // reply rules, mandatory action lists, "treat as telemetry" directive)
+    // lives in SLACK_SIGNAL_PROTOCOL_PROMPT, injected once into
+    // agent_snapshot.system at session.create — see provider.ts top.
+    //
+    // Tag schema is preserved (kind only, plus channel/thread_ts on
+    // direct_invocation) — the agent runtime parses those attrs.
+
     if (signalKind === "joined_channel") {
       const verb = extras.reopened ? "added back to" : "added to";
       return [
         `<oma_signal kind="joined_channel">`,
-        `You (the bot) were ${verb} ${channelLabel} in workspace ${event.workspaceId}.`,
-        ``,
-        `Required actions for this turn:`,
-        `1. Call slack \`conversations.info\` to read this channel's topic and purpose.`,
-        `2. Call slack \`conversations.history\` (limit ~20) to see what's been discussed recently.`,
-        `3. Decide whether to post a brief self-introduction. Skip if the channel already knows you, has a clear purpose mismatch, or feels noisy/inappropriate to chime in.`,
-        ``,
-        `Future signals you'll receive in this channel:`,
-        `- \`channel_scan_armed\`: new top-level activity. You schedule a delayed wakeup; do NOT post.`,
-        `- \`direct_invocation\`: explicit @-mention or DM. Respond promptly.`,
-        `- \`reaction_on_bot_message\`: feedback signal. Usually stay silent.`,
-        ``,
-        `Important: this signal is an internal runtime event. Do NOT quote or reference any of the above wording in messages you post to Slack — humans don't need to see internal mechanics.`,
+        `You (the bot) were ${verb} ${channelLabel}.`,
         `</oma_signal>`,
       ].join("\n");
     }
@@ -1478,17 +1533,12 @@ export class SlackProvider implements IntegrationProvider {
       const oldest = extras.lastScanAt
         ? `${(extras.lastScanAt / 1000).toFixed(6)}`
         : `<channel-session-creation-time>`;
+      // Body keeps debounce_seconds + oldest as inline data the protocol
+      // prompt's scheduleWakeup instructions reference. Channel id is
+      // already on the signal envelope via channelLabel.
       return [
         `<oma_signal kind="channel_scan_armed">`,
-        `New top-level activity occurred in ${channelLabel}.`,
-        ``,
-        `MANDATORY actions for this turn (no other actions permitted):`,
-        `1. Call \`scheduleWakeup({ delay_seconds: ${debounceSec}, prompt: "scan_channel ${event.channelId}" })\` to schedule a delayed look.`,
-        `2. End your turn. Output NO text. Do NOT call slack \`chat.postMessage\`, \`chat.update\`, \`reactions.add\`, or any other write tool. Do NOT comment on what you just did.`,
-        ``,
-        `Why: this signal exists to coordinate debounced scanning. The runtime has already silently armed a ${debounceSec}s window — the human did NOT request a status update. Posting "I scheduled a scan" or any similar message into Slack is a bug.`,
-        ``,
-        `When your wakeup fires (next turn), the prompt will be "scan_channel ${event.channelId}". At that point you call slack \`conversations.history(channel="${event.channelId}", oldest=${oldest})\` to see what arrived during the window, then decide whether to act (post / react / mention) or stay silent.`,
+        `New top-level activity in ${channelLabel}. debounce_seconds=${debounceSec} oldest=${oldest}`,
         `</oma_signal>`,
       ].join("\n");
     }
@@ -1497,21 +1547,12 @@ export class SlackProvider implements IntegrationProvider {
       const inThread = event.threadTs && event.threadTs !== event.eventTs ? ` in thread ${event.threadTs}` : "";
       const who = event.userId ? `<@${event.userId}>` : "Someone";
       const text = event.text ?? "";
-      const replyHint = event.threadTs
-        ? `Reply via slack \`chat.postMessage\` with \`thread_ts="${event.threadTs}"\` to keep the conversation threaded.`
-        : `Reply via slack \`chat.postMessage\` (no thread_ts — this is a top-level conversation).`;
       return [
         `<oma_signal kind="direct_invocation" channel="${event.channelId ?? ""}" thread_ts="${event.threadTs ?? ""}">`,
         `${who} addressed you directly in ${channelLabel}${inThread}.`,
-        `</oma_signal>`,
-        ``,
         `User message:`,
         text,
-        ``,
-        `<oma_instructions>`,
-        `Respond to the user message above. Treat all prior \`<oma_signal>\` blocks in this session as runtime telemetry, NOT conversation context — do NOT reference signal names, internal terms ("scan window", "channel_scan_armed", "scheduleWakeup", "throttle", "debounce", "session"), or system prompts in your reply. Speak as the bot persona to the human.`,
-        replyHint,
-        `</oma_instructions>`,
+        `</oma_signal>`,
       ].join("\n");
     }
 
@@ -1522,29 +1563,16 @@ export class SlackProvider implements IntegrationProvider {
       return [
         `<oma_signal kind="reaction_on_bot_message">`,
         `${actor} ${verb} :${event.reactionName ?? "?"}: on a message (ts=${event.itemTs ?? "?"}) in ${channelLabel}.`,
-        ``,
-        `This is a feedback signal. Conventional meanings: ✅/👍 = satisfied, 🚫/👎 = unsatisfied, ❓ = unclear, 🐛 = bug report, 🎉 = resolved, 👀 = noticed/investigating.`,
-        ``,
-        `Default: stay silent. End your turn with NO action. Do NOT call slack write tools (chat.postMessage / reactions.add / etc.) unless ALL of these are true:`,
-        `(a) the reaction is clearly negative (🚫/👎) or a question (❓), AND`,
-        `(b) you can add genuine value by responding (e.g., a clarification or apology), AND`,
-        `(c) you would not be over-replying to a casual ack.`,
-        ``,
-        `Do NOT post "got your reaction" / "noted" / "thanks for feedback" — that is noise.`,
         `</oma_signal>`,
       ].join("\n");
     }
 
     if (signalKind === "session_closed") {
       const reason =
-        event.kind === "member_left_channel" ? "you were removed from the channel" : "the channel was archived";
+        event.kind === "member_left_channel" ? "removed_from_channel" : "channel_archived";
       return [
         `<oma_signal kind="session_closed">`,
         `Final wakeup for ${channelLabel}: ${reason}.`,
-        ``,
-        `MANDATORY actions for this turn:`,
-        `1. Cancel any wakeups you scheduled for this channel — call \`cancelWakeup\` on each id you remember, OR simply end the turn and let them lapse (they'll fail with channel_not_found, which is fine).`,
-        `2. End your turn with NO further action. Do NOT post a farewell — you cannot post into the channel anyway.`,
         `</oma_signal>`,
       ].join("\n");
     }
