@@ -1887,17 +1887,33 @@ function EventRender({
         : typeof rawContent === "string"
           ? rawContent
           : JSON.stringify(rawContent, null, 2);
-      // State maps to the Tool badge: input-available (Running) while
-      // we have args but no result; output-available (Completed) once
-      // the paired result lands. We don't surface output-error because
-      // the OMA tool_result spec doesn't carry a failure flag.
-      const state = pairedResult ? "output-available" : "input-available";
+      // is_error is set by the agent runtime when a tool call failed
+      // (bash non-zero exit + stderr surfaced, mcp tool returned an
+      // error envelope, _finalizeStaleTurns injected an abort placeholder
+      // for DO-eviction recovery, etc.). When present we route the same
+      // payload through ToolOutput.errorText so the Tool block renders
+      // in destructive styling, and badge to 'output-error' so the
+      // header pill shows Failed instead of Completed. Without this,
+      // bash returning "Sandbox container failed to start after 10
+      // attempts..." looked identical to a successful run.
+      const isError = pairedResult
+        ? Boolean((pairedResult as { is_error?: boolean }).is_error)
+        : false;
+      const errorText = isError
+        ? (typeof output === "string" ? output : JSON.stringify(output ?? null))
+        : undefined;
+      const state = pairedResult
+        ? (isError ? "output-error" : "output-available")
+        : "input-available";
       return (
         <Tool>
           <ToolHeader type="dynamic-tool" toolName={title} state={state} />
           <ToolContent>
             <ToolInput input={event.input ?? {}} />
-            <ToolOutput output={output} errorText={undefined} />
+            <ToolOutput
+              output={isError ? undefined : output}
+              errorText={errorText}
+            />
           </ToolContent>
         </Tool>
       );
