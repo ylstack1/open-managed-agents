@@ -1343,10 +1343,32 @@ export class SlackProvider implements IntegrationProvider {
       // Slack will also deliver app_mention for this message.
       return { kind: "drop", reason: "redundant_with_app_mention" };
     }
-    // per_channel: top-level message in a channel the bot is a member of →
-    // arm a debounced scan turn. dispatchEvent does the throttle check.
-    if (isPerChannel && event.isTopLevel && event.channelId) {
-      return { kind: "dispatch", intent: "scan_arm" };
+    // per_channel mode: every message in a channel where we have an active
+    // session is meaningful — top-level messages arm a debounced scan,
+    // thread replies (in any thread, not only the bot's own) re-engage the
+    // session as a direct interaction. We look up by `channel:${id}`,
+    // matching the scope row created at session-create. Without this,
+    // thread replies were dropped as "not_addressed_to_bot" because the
+    // parsed scopeKey (thread-level: `${channel}:${thread_ts}`) doesn't
+    // match the stored channel-level row.
+    if (isPerChannel && event.channelId) {
+      const channelScopeKey = `channel:${event.channelId}`;
+      const existing = await this.container.sessionScopes.getByScope(
+        publication.id,
+        channelScopeKey,
+      );
+      if (existing && existing.status === "active") {
+        return {
+          kind: "dispatch",
+          intent: event.isTopLevel ? "scan_arm" : "direct_invocation",
+        };
+      }
+      // No active channel session yet — fall through to scan_arm only on
+      // top-level (the original behavior). Thread reply with no session is
+      // genuinely not addressed to us.
+      if (event.isTopLevel) {
+        return { kind: "dispatch", intent: "scan_arm" };
+      }
     }
     if (event.scopeKey) {
       const existing = await this.container.sessionScopes.getByScope(
