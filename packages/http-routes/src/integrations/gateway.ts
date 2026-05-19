@@ -110,7 +110,64 @@ export function buildIntegrationsGatewayRoutes(deps: IntegrationsGatewayDeps) {
   });
 
   // ─── GitHub ──────────────────────────────────────────────────────────
+  // GET /github/oauth/pub/:pubId/callback?installation_id=&setup_action=&state=
+  // Publication-first install callback. The setup URL on the GitHub App is
+  // keyed on the publication id (not the legacy app_oma_id), so retries
+  // route to the same publication row regardless of the user re-creating
+  // an App. Same `installation_id` + `state` query semantics as the legacy
+  // path; provider's continueInstall switches on payload.kind.
+  app.get("/github/oauth/pub/:pubId/callback", async (c) => {
+    const pubId = c.req.param("pubId");
+    const url = new URL(c.req.url);
+    const installationId = url.searchParams.get("installation_id");
+    const setupAction = url.searchParams.get("setup_action");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+    if (error) return c.json({ error: "github_install_denied", details: error }, 400);
+    if (!pubId || !installationId || !state) {
+      return c.json({ error: "missing pubId, installation_id, or state" }, 400);
+    }
+    if (setupAction === "request") {
+      // Org admin requested the install but it's pending approval — show
+      // a pending page rather than 500-ing on missing installation token.
+      return c.html(githubRequestPendingPage(setupAction), 200);
+    }
+    try {
+      const result = await deps.installBridge.continueInstall({
+        provider: "github",
+        providerInstallationId: pubId,
+        state,
+        extra: { installationId, setupAction, publicationFirst: true },
+      });
+      if (!result.returnUrl) {
+        return c.json({
+          ok: true,
+          publicationId: result.publicationId,
+          capabilityProbe: result.capabilityProbe ?? null,
+        });
+      }
+      const target = new URL(result.returnUrl);
+      target.searchParams.set("publication_id", result.publicationId);
+      target.searchParams.set("install", "ok");
+      const probe = result.capabilityProbe;
+      if (probe) {
+        target.searchParams.set("probe_kind", probe.kind);
+        target.searchParams.set("probe_ok", probe.ok ? "1" : "0");
+        if (probe.message) target.searchParams.set("probe_message", probe.message);
+        if (probe.fixUrl) target.searchParams.set("probe_fix_url", probe.fixUrl);
+      }
+      return c.redirect(target.toString(), 302);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn({ op: "github.oauth.pub.callback.failed", pubId, err: msg }, "github callback failed");
+      return c.json({ error: "install_failed", details: msg }, 500);
+    }
+  });
+
   // GET /github/install/app/:appOmaId/callback?installation_id=&setup_action=&state=
+  // Legacy install callback — kept for installations created before
+  // migration 0002. Same semantics, just keyed on app_oma_id rather than
+  // pub_id. Once all live publications are publication-first this can go.
   app.get("/github/install/app/:appOmaId/callback", async (c) => {
     const appOmaId = c.req.param("appOmaId");
     const url = new URL(c.req.url);

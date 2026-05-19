@@ -80,10 +80,18 @@ export class CfInstallBridge implements InstallBridge {
       const container = buildGitHubContainer(env);
       const stateRaw = args.state ?? "";
       const isManifest = Boolean(args.extra?.manifest);
+      const isPublicationFirst = Boolean(args.extra?.publicationFirst);
       const result = await providers.github.continueInstall({
         publicationId: null,
         payload: isManifest
           ? { kind: "manifest_callback", code: args.code, state: stateRaw }
+          : isPublicationFirst
+          ? {
+              kind: "oauth_callback_pub",
+              publicationId: args.providerInstallationId,
+              installationId: args.extra?.installationId,
+              state: stateRaw,
+            }
           : {
               kind: "install_callback",
               appOmaId: args.providerInstallationId,
@@ -93,10 +101,11 @@ export class CfInstallBridge implements InstallBridge {
       });
       if (result.kind === "step" && result.step === "install_link") {
         // Manifest path: result.data carries the install URL — surface it
-        // through returnUrl so the route can redirect. publicationId not
-        // available yet; we use the appOmaId as a placeholder marker.
+        // through returnUrl so the route can redirect.
         return {
-          publicationId: String(result.data.appOmaId ?? "pending"),
+          publicationId: String(
+            result.data.publicationId ?? result.data.appOmaId ?? "pending",
+          ),
           returnUrl: String(result.data.url),
         };
       }

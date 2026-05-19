@@ -7,6 +7,10 @@
 
 export { GitHubProvider } from "./provider";
 export type { GitHubContainer } from "./provider";
+export type {
+  GitHubPublicationRepo,
+  GitHubPublicationCredentialState,
+} from "./ports";
 export {
   type GitHubConfig,
   ALL_GITHUB_CAPABILITIES,

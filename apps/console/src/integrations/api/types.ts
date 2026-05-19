@@ -189,7 +189,7 @@ export interface GitHubPublication {
   installation_id: string;
   environment_id: string;
   mode: "full";
-  status: "pending_setup" | "awaiting_install" | "live" | "needs_reauth" | "unpublished";
+  status: "pending_setup" | "credentials_filled" | "awaiting_install" | "live" | "needs_reauth" | "unpublished";
   persona: { name: string; avatarUrl: string | null };
   capabilities: string[];
   session_granularity: "per_issue" | "per_event";
@@ -199,6 +199,10 @@ export interface GitHubPublication {
 
 export interface GitHubA1FormStep {
   formToken: string;
+  /** Publication-first: id of the github_publications shell row we just
+   *  created. Wizard tracks this for polling and `?publication_id=` query
+   *  string round-trips. */
+  publicationId: string;
   appOmaId: string;
   suggestedAppName: string;
   suggestedAvatarUrl: string | null;
@@ -214,6 +218,8 @@ export interface GitHubA1FormStep {
 
 export interface GitHubA1InstallLink {
   url: string;
+  /** Publication-first: same id as on GitHubA1FormStep. */
+  publicationId: string;
   appOmaId: string;
   appSlug: string;
   botLogin: string;

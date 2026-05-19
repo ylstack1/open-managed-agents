@@ -70,7 +70,7 @@ export function buildNodeRepos(env: NodeReposEnv) {
   const linearInstallations = new SqlInstallationRepo(sql, cryptoImpl, ids);
   const linearPublications = new SqlPublicationRepo(sql, ids);
   const githubInstallations = new SqlGitHubInstallationRepo(sql, cryptoImpl, ids);
-  const githubPublications = new SqlGitHubPublicationRepo(sql, ids);
+  const githubPublications = new SqlGitHubPublicationRepo(sql, ids, cryptoImpl);
   const apps = new SqlAppRepo(sql, cryptoImpl, ids);
   const githubApps = new SqlGitHubAppRepo(sql, cryptoImpl, ids);
   const linearEvents = new SqlLinearEventStore(sql);

@@ -28,7 +28,7 @@ import {
   D1SlackWebhookEventStore,
   type CfContainerEnv,
 } from "@open-managed-agents/integrations-adapters-cf";
-import type { Container } from "@open-managed-agents/integrations-core";
+import type { GitHubContainer } from "@open-managed-agents/github";
 import type { LinearContainer } from "@open-managed-agents/linear";
 import type { SlackContainer } from "@open-managed-agents/slack";
 import type { Env } from "./env";
@@ -70,8 +70,13 @@ export function buildContainer(env: Env): LinearContainer {
  * All other shared adapters (githubApps, sessions, vaults, etc.) carry over
  * unchanged. sessionScopes follows the same unused-but-required pattern
  * as buildContainer.
+ *
+ * `publications` is narrowed to GitHubPublicationRepo so the provider can
+ * call into the publication-first credential staging methods
+ * (insertShell, setCredentials, getPrivateKey, bindInstallation,
+ * findByAppOmaId).
  */
-export function buildGitHubContainer(env: Env): Container {
+export function buildGitHubContainer(env: Env): GitHubContainer {
   const base = buildCfContainer(cfEnvOf(env));
   return {
     ...base,

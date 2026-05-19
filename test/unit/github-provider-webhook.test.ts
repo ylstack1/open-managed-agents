@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { GitHubProvider } from "../../packages/github/src/provider";
 import {
-  buildFakeContainer,
-  type FakeContainer,
-} from "../../packages/integrations-core/src/test-fakes";
+  buildFakeGitHubContainer,
+  type FakeGitHubContainer,
+} from "../../packages/github/src/test-fakes";
 import {
   DEFAULT_GITHUB_CAPABILITIES,
   DEFAULT_GITHUB_MCP_URL,
@@ -12,7 +12,7 @@ import { generateTestPrivateKeyPem } from "./github-test-helpers";
 
 let FAKE_PEM: string;
 
-function makeProvider(c: FakeContainer): GitHubProvider {
+function makeProvider(c: FakeGitHubContainer): GitHubProvider {
   return new GitHubProvider(c, {
     gatewayOrigin: "https://gw",
     defaultCapabilities: DEFAULT_GITHUB_CAPABILITIES,
@@ -21,12 +21,12 @@ function makeProvider(c: FakeContainer): GitHubProvider {
 }
 
 /**
- * Walks the provider through start → submit → install_callback so the test
- * has a live publication + linked App row to dispatch against. Returns the
- * appOmaId and publicationId.
+ * Walks the provider through start → submit → oauth_callback_pub so the
+ * test has a live publication + linked App row to dispatch against.
+ * Returns the appOmaId and publicationId.
  */
 async function bootstrapPublication(
-  c: FakeContainer,
+  c: FakeGitHubContainer,
   provider: GitHubProvider,
   webhookSecret = "wh_secret",
 ): Promise<{ appOmaId: string; publicationId: string; botLogin: string }> {
@@ -35,6 +35,7 @@ async function bootstrapPublication(
     persona: { name: "Coder", avatarUrl: null }, returnUrl: "https://console/done",
   });
   if (start.kind !== "step") throw new Error("expected step");
+  const pubId = start.data.publicationId as string;
 
   c.http.respondWith({
     status: 200, headers: {},
@@ -80,7 +81,12 @@ async function bootstrapPublication(
   );
   const complete = await provider.continueInstall({
     publicationId: null,
-    payload: { kind: "install_callback", appOmaId, installationId: "9988776", state },
+    payload: {
+      kind: "oauth_callback_pub",
+      publicationId: pubId,
+      installationId: "9988776",
+      state,
+    },
   });
   if (complete.kind !== "complete") throw new Error("expected complete");
   return { appOmaId, publicationId: complete.publicationId, botLogin };
@@ -92,11 +98,11 @@ function fakeSig(secret: string, body: string): string {
 }
 
 describe("GitHubProvider — webhook dispatch", () => {
-  let c: FakeContainer;
+  let c: FakeGitHubContainer;
   let provider: GitHubProvider;
 
   beforeEach(async () => {
-    c = buildFakeContainer();
+    c = buildFakeGitHubContainer();
     provider = makeProvider(c);
     if (!FAKE_PEM) FAKE_PEM = await generateTestPrivateKeyPem();
   });

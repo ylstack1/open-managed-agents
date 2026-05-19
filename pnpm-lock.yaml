@@ -1004,6 +1004,9 @@ importers:
 
   packages/integrations-adapters-cf:
     dependencies:
+      '@open-managed-agents/github':
+        specifier: workspace:*
+        version: link:../github
       '@open-managed-agents/integrations-core':
         specifier: workspace:*
         version: link:../integrations-core
@@ -1016,6 +1019,9 @@ importers:
 
   packages/integrations-adapters-node:
     dependencies:
+      '@open-managed-agents/github':
+        specifier: workspace:*
+        version: link:../github
       '@open-managed-agents/integrations-core':
         specifier: workspace:*
         version: link:../integrations-core

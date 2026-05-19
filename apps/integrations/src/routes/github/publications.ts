@@ -2,21 +2,27 @@ import { Hono } from "hono";
 import type { Env } from "../../env";
 import { buildProviders } from "../../providers";
 
-// GitHub publish flow — mirrors the linear/publications.ts shape exactly so
-// the Console can call /github/publications/* the same way it calls Linear.
+// GitHub publish flow — publication-first install (migration 0002).
 //
 // Endpoints:
 //   1. POST /github/publications/start-a1
-//      → { formToken, appOmaId, setupUrl, webhookUrl, suggestedAppName,
-//          recommendedPermissions, recommendedSubscriptions }
+//      → INSERT a github_publications shell row (status='pending_setup',
+//         app_oma_id pre-allocated). Returns { formToken, publicationId,
+//         appOmaId, setupUrl, webhookUrl, suggestedAppName,
+//         recommendedPermissions, recommendedSubscriptions,
+//         manifestStartUrl }.
 //   2. POST /github/publications/credentials
-//      → { url, appOmaId, appSlug, botLogin, setupUrl, webhookUrl }
-//   3. GET  /github/install/app/:appOmaId/callback
-//      → completes install, redirects to Console returnUrl
+//      → PATCH client_id / client_secret / app_id / app_slug / bot_login /
+//         webhook_secret / private_key onto the publication row (encrypted
+//         server-side). Returns { url, publicationId, appOmaId, appSlug,
+//         botLogin, setupUrl, webhookUrl }.
+//   3. GET /github/oauth/pub/:pubId/callback (gateway routes)
+//      → completes install: mints installation token, vault, binds back
+//         onto the publication, redirects to Console returnUrl.
 //
 // /start-a1 and /handoff-link require x-internal-secret. /credentials is
-// reachable directly from the user's browser (admin handoff) — auth there is
-// the formToken JWT itself.
+// reachable directly from the user's browser (admin handoff) — auth there
+// is the formToken JWT itself.
 
 const app = new Hono<{ Bindings: Env }>();
 

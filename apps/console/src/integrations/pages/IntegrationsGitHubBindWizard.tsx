@@ -24,18 +24,30 @@ type Phase = "config" | "registering" | "installing" | "done" | "error";
  *
  * Phases:
  *   config       → user picks agent + env + persona + clicks "Bind"
- *                  We POST start-a1, get formToken + manifestStartUrl.
+ *                  We POST start-a1 → backend INSERTs a github_publications
+ *                  shell row (status='pending_setup', app_oma_id minted)
+ *                  and returns formToken + manifestStartUrl + publicationId.
  *   registering  → we open manifestStartUrl in a popup. User confirms on
  *                  GitHub. GitHub redirects through our gateway which
- *                  exchanges the manifest code and writes the App row.
- *                  Meanwhile we poll listInstallations() until we see
- *                  the new appOmaId show up as a publication shell.
+ *                  exchanges the manifest code and PATCH'es credentials onto
+ *                  the publication row.
+ *                  Meanwhile we poll listInstallations() until we see the
+ *                  publication go to 'live' (after install callback runs).
  *   installing   → we open the install URL (returned from manifest
  *                  callback) in a popup. User picks org and confirms
- *                  install. Gateway completes install_callback. We poll
- *                  until publication.status === "live".
+ *                  install. Gateway calls /github/oauth/pub/<pubId>/callback
+ *                  which mints the installation token, creates the vault,
+ *                  and binds installation_id back onto the publication. We
+ *                  poll until publication.status === "live".
  *   done         → success. Show confetti-equivalent and a link to the
  *                  workspace page.
+ *
+ * The publication-first flow means even mid-flow failure (network blip on
+ * manifest exchange, OAuth callback timeout) leaves at most a publication
+ * row in 'pending_setup' or 'credentials_filled' — never a ghost
+ * installation/app pair. User can re-run the wizard to start a fresh shell
+ * or hand off the same formToken via /github-setup/<token> for an admin to
+ * complete.
  */
 export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: Props) {
   const navigate = useNavigate();
@@ -120,20 +132,23 @@ export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: P
       }
       // Optimistically advance to "installing" — once the user's clicked
       // through the manifest flow, GitHub takes them straight into the
-      // install screen. The poll below covers both phases until a live
-      // publication appears.
+      // install screen. The poll below covers both phases until the
+      // publication flips to live.
       setPhase("installing");
-      startInstallPoll();
+      // Track the publication id directly. We have it from start-a1 — no
+      // need to scan listInstallations until the install callback runs.
+      startInstallPoll(r.publicationId);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPhase("error");
     }
   }
 
-  // Poll every 5 seconds for a live publication owned by this agent. When we
-  // find one, switch to "done" and stop. Hard cap at ~5 minutes (60 ticks)
-  // so abandoned tabs don't poll forever.
-  function startInstallPoll() {
+  // Poll every 5 seconds for the publication's status to flip to 'live'.
+  // We have the publicationId up-front (publication-first flow), so we
+  // can poll it directly instead of scanning all installations. Hard cap
+  // at ~5 minutes (60 ticks) so abandoned tabs don't poll forever.
+  function startInstallPoll(pubId: string) {
     stopPolling();
     let ticks = 0;
     const TICK_MS = 5_000;
@@ -145,18 +160,12 @@ export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: P
         return;
       }
       try {
-        const all = await api.github.listInstallations();
-        for (const inst of all) {
-          const pubs = await api.github.listPublications(inst.id);
-          const live = pubs.find(
-            (p) => p.agent_id === agentId && p.status === "live",
-          );
-          if (live) {
-            stopPolling();
-            setPhase("done");
-            setLivePubId(live.id);
-            return;
-          }
+        const pub = await api.github.getPublication(pubId);
+        if (pub.status === "live") {
+          stopPolling();
+          setPhase("done");
+          setLivePubId(pub.id);
+          return;
         }
       } catch {
         // Network blip — keep polling. We only stop on success or timeout.
@@ -168,18 +177,12 @@ export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: P
   async function refresh() {
     if (!form) return;
     try {
-      const all = await api.github.listInstallations();
-      for (const inst of all) {
-        const pubs = await api.github.listPublications(inst.id);
-        const live = pubs.find(
-          (p) => p.agent_id === agentId && p.status === "live",
-        );
-        if (live) {
-          stopPolling();
-          setPhase("done");
-          setLivePubId(live.id);
-          return;
-        }
+      const pub = await api.github.getPublication(form.publicationId);
+      if (pub.status === "live") {
+        stopPolling();
+        setPhase("done");
+        setLivePubId(pub.id);
+        return;
       }
     } catch {
       // ignore — user can keep waiting

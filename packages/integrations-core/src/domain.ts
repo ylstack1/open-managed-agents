@@ -201,6 +201,10 @@ export type PublicationMode = "full";
 
 export type PublicationStatus =
   | "pending_setup"
+  /** Publication-first install: credentials staged on the row, OAuth not
+   *  yet completed. Slack and GitHub flow through this on the way from
+   *  pending_setup → awaiting_install. */
+  | "credentials_filled"
   | "awaiting_install"
   | "live"
   | "needs_reauth"

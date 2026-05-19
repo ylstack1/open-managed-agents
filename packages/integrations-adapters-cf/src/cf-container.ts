@@ -93,7 +93,7 @@ export function buildCfRepos(env: CfReposEnv) {
   const linearInstallations = new D1InstallationRepo(idb, cryptoImpl, ids);
   const linearPublications = new D1PublicationRepo(idb, ids);
   const githubInstallations = new D1GitHubInstallationRepo(idb, cryptoImpl, ids);
-  const githubPublications = new D1GitHubPublicationRepo(idb, ids);
+  const githubPublications = new D1GitHubPublicationRepo(idb, ids, cryptoImpl);
   const apps = new D1AppRepo(idb, cryptoImpl, ids);
   const githubApps = new D1GitHubAppRepo(idb, cryptoImpl, ids);
   // Linear's webhook store is the merged `linear_events` table — narrower

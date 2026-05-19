@@ -37,6 +37,7 @@ import {
   DEFAULT_GITHUB_CAPABILITIES,
   DEFAULT_GITHUB_MCP_URL,
   GitHubProvider,
+  type GitHubContainer,
   mintAppJwt,
   buildInstallationTokenRequest,
   parseInstallationTokenResponse,
@@ -151,10 +152,18 @@ export class NodeInstallBridge implements InstallBridge {
       });
       const stateRaw = args.state ?? "";
       const isManifest = Boolean(args.extra?.manifest);
+      const isPublicationFirst = Boolean(args.extra?.publicationFirst);
       const result = await provider.continueInstall({
         publicationId: null,
         payload: isManifest
           ? { kind: "manifest_callback", code: args.code, state: stateRaw }
+          : isPublicationFirst
+          ? {
+              kind: "oauth_callback_pub",
+              publicationId: args.providerInstallationId,
+              installationId: args.extra?.installationId,
+              state: stateRaw,
+            }
           : {
               kind: "install_callback",
               appOmaId: args.providerInstallationId,
@@ -164,7 +173,9 @@ export class NodeInstallBridge implements InstallBridge {
       });
       if (result.kind === "step" && result.step === "install_link") {
         return {
-          publicationId: String(result.data.appOmaId ?? "pending"),
+          publicationId: String(
+            result.data.publicationId ?? result.data.appOmaId ?? "pending",
+          ),
           returnUrl: String(result.data.url),
         };
       }
@@ -394,7 +405,7 @@ export class NodeInstallBridge implements InstallBridge {
    *  no caching. */
   buildContainers(): {
     linear: LinearContainer;
-    github: Container;
+    github: GitHubContainer;
     slack: SlackContainer;
   } {
     const repos = buildNodeRepos({
@@ -412,7 +423,7 @@ export class NodeInstallBridge implements InstallBridge {
       sessions,
       vaults,
     };
-    const baseGithub: Container = {
+    const baseGithub: GitHubContainer = {
       ...repos,
       installations: repos.githubInstallations,
       publications: repos.githubPublications,
