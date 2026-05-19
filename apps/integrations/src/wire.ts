@@ -96,7 +96,7 @@ export function buildSlackContainer(env: Env): SlackContainer {
   return {
     ...base,
     installations: new D1SlackInstallationRepo(env.INTEGRATIONS_DB, base.crypto, base.ids),
-    publications: new D1SlackPublicationRepo(env.INTEGRATIONS_DB, base.ids),
+    publications: new D1SlackPublicationRepo(env.INTEGRATIONS_DB, base.ids, base.crypto),
     apps: new D1SlackAppRepo(env.INTEGRATIONS_DB, base.crypto, base.ids),
     webhookEvents: new D1SlackWebhookEventStore(env.INTEGRATIONS_DB),
     sessionScopes: new D1SlackSessionScopeRepo(env.INTEGRATIONS_DB),

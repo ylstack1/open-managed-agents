@@ -234,7 +234,62 @@ export function buildIntegrationsGatewayRoutes(deps: IntegrationsGatewayDeps) {
   });
 
   // ─── Slack ───────────────────────────────────────────────────────────
-  // GET /slack/oauth/app/:appId/callback?code=&state=
+  // GET /slack/oauth/pub/:pubId/callback?code=&state=
+  //
+  // Publication-first install: the OMA publication id (not Slack's app id) is
+  // the path parameter. Provider reads creds straight off the publication
+  // row (`slack_publications.client_*_cipher`), exchanges code, materializes
+  // installation/vaults/apps, binds them back onto the publication, flips
+  // status to 'live'. See SlackProvider.completeInstall.
+  app.get("/slack/oauth/pub/:pubId/callback", async (c) => {
+    const pubId = c.req.param("pubId");
+    const url = new URL(c.req.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+    if (error) return c.json({ error: "slack_oauth_denied", details: error }, 400);
+    if (!pubId || !code || !state) {
+      return c.json({ error: "missing pubId, code, or state" }, 400);
+    }
+    try {
+      const result = await deps.installBridge.continueInstall({
+        provider: "slack",
+        providerInstallationId: pubId,
+        code,
+        state,
+      });
+      if (!result.returnUrl) {
+        return c.json({
+          ok: true,
+          publicationId: result.publicationId,
+          capabilityProbe: result.capabilityProbe ?? null,
+        });
+      }
+      const target = new URL(result.returnUrl);
+      target.searchParams.set("publication_id", result.publicationId);
+      target.searchParams.set("install", "ok");
+      // Surface the vendor capability probe (e.g. Slack MCP toggle) as
+      // query params so the wizard's success page can show the right
+      // green-check or warning-with-deeplink banner.
+      const probe = result.capabilityProbe;
+      if (probe) {
+        target.searchParams.set("probe_kind", probe.kind);
+        target.searchParams.set("probe_ok", probe.ok ? "1" : "0");
+        if (probe.message) target.searchParams.set("probe_message", probe.message);
+        if (probe.fixUrl) target.searchParams.set("probe_fix_url", probe.fixUrl);
+      }
+      return c.redirect(target.toString(), 302);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.warn({ op: "slack.oauth.pub.callback.failed", pubId, err: msg }, "slack callback failed");
+      return c.json({ error: "install_failed", details: msg }, 500);
+    }
+  });
+
+  // Legacy callback path retained for any in-flight installs that started
+  // on the old per-app id flow. Delegates to the same install bridge with
+  // the legacy provider-installation-id (Slack app id). Will become a 404
+  // once those installs drain (~1h after deploy).
   app.get("/slack/oauth/app/:appId/callback", async (c) => {
     const appId = c.req.param("appId");
     const url = new URL(c.req.url);
@@ -262,9 +317,6 @@ export function buildIntegrationsGatewayRoutes(deps: IntegrationsGatewayDeps) {
       const target = new URL(result.returnUrl);
       target.searchParams.set("publication_id", result.publicationId);
       target.searchParams.set("install", "ok");
-      // Surface the vendor capability probe (e.g. Slack MCP toggle) as
-      // query params so the wizard's success page can show the right
-      // green-check or warning-with-deeplink banner.
       const probe = result.capabilityProbe;
       if (probe) {
         target.searchParams.set("probe_kind", probe.kind);

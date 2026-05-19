@@ -21,7 +21,6 @@ import type {
   McpScope,
   McpToolDescriptor,
   McpToolResult,
-  Persona,
   ProviderId,
   Publication,
   SessionGranularity,
@@ -44,7 +43,11 @@ import {
   parseTokenResponse,
 } from "./oauth/protocol";
 import { buildManifest, buildManifestLaunchUrl } from "./oauth/manifest";
-import type { SlackInstallationRepo, SlackSessionScopeRepo } from "./ports";
+import type {
+  SlackInstallationRepo,
+  SlackPublicationRepo,
+  SlackSessionScopeRepo,
+} from "./ports";
 import {
   buildBaseString,
   isTimestampFresh,
@@ -165,14 +168,17 @@ interface SignalExtras {
 }
 
 /**
- * SlackProvider's container differs from the base Container in two places:
+ * SlackProvider's container differs from the base Container in three places:
  * `installations` is a SlackInstallationRepo (extends InstallationRepo with
- * getUserToken / setBotVaultId), and `sessionScopes` is a SlackSessionScopeRepo
- * (extends SessionScopeRepo with armPendingScan / clearPendingScan /
+ * getUserToken / setBotVaultId), `publications` is a SlackPublicationRepo
+ * (extends PublicationRepo with the publication-first credential staging
+ * methods), and `sessionScopes` is a SlackSessionScopeRepo (extends
+ * SessionScopeRepo with armPendingScan / clearPendingScan /
  * updateChannelName for per_channel granularity).
  */
-export interface SlackContainer extends Omit<Container, "installations" | "sessionScopes"> {
+export interface SlackContainer extends Omit<Container, "installations" | "publications" | "sessionScopes"> {
   installations: SlackInstallationRepo;
+  publications: SlackPublicationRepo;
   sessionScopes: SlackSessionScopeRepo;
 }
 
@@ -188,22 +194,49 @@ export class SlackProvider implements IntegrationProvider {
   }
 
   // ─── Install ─────────────────────────────────────────────────────────
+  //
+  // Publication-first install:
+  //   1. startInstall → INSERT a slack_publications shell row, status=
+  //      'pending_setup'. Returns the FINAL callback URL keyed on the
+  //      publication id ("/slack/oauth/pub/<pub_id>/callback") so the
+  //      manifest baked at api.slack.com is correct from minute one.
+  //   2. submitCredentials → PATCH client_id / client_secret / signing_secret
+  //      onto the publication row (encrypted). Status flips to
+  //      'credentials_filled'. Idempotent — re-pasting overwrites cipher
+  //      columns; never creates a second row.
+  //   3. handleOAuthCallback → reads the publication row, exchanges the
+  //      OAuth code, creates installation + vaults + slack_apps row, binds
+  //      everything back onto the publication, flips status='live'.
+  //
+  // The old "OAuth callback creates everything" flow (with cascading INSERTs
+  // across slack_installations, slack_apps, vaults, slack_publications) is
+  // gone. Mid-flow failure now leaves at most a stale set of cipher columns
+  // on a single row — the user can re-paste credentials and re-do OAuth
+  // without first cleaning up a ghost row.
 
   async startInstall(input: StartInstallInput): Promise<InstallStep | InstallComplete> {
-    // Same A1 pattern as Linear: generate appId upfront so step 1 hands the
-    // user the *final* callback / Events Request URLs. We don't write the
-    // App row until step 2 (after user pastes their OAuth client credentials
-    // + Slack's per-app signing secret from App admin → Basic Information).
-    const appId = this.container.ids.generate();
+    // INSERT the publication shell up-front. Doing this here (vs. a separate
+    // route handler) keeps the provider as the single source of truth for
+    // "what state is a half-finished install in".
+    const tenantId = await this.container.tenants.resolveByUserId(input.userId);
+    const publication = await this.container.publications.insertShell({
+      tenantId,
+      userId: input.userId,
+      agentId: input.agentId,
+      environmentId: input.environmentId,
+      persona: input.persona,
+      capabilities: new Set(
+        this.config.defaultCapabilities ?? ALL_SLACK_CAPABILITIES,
+      ),
+      sessionGranularity: this.config.defaultSessionGranularity ?? "per_channel",
+    });
+
     const formToken = await this.container.jwt.sign(
       {
-        kind: "slack.a1.form",
+        kind: "slack.pub.form",
+        publicationId: publication.id,
         userId: input.userId,
-        agentId: input.agentId,
-        environmentId: input.environmentId,
-        persona: input.persona,
         returnUrl: input.returnUrl,
-        appId,
       },
       OAUTH_STATE_TTL_SECONDS,
     );
@@ -213,25 +246,46 @@ export class SlackProvider implements IntegrationProvider {
       step: "credentials_form",
       data: {
         formToken,
+        publicationId: publication.id,
         suggestedAppName: input.persona.name,
         suggestedAvatarUrl: input.persona.avatarUrl,
-        callbackUrl: this.callbackUri(appId),
-        webhookUrl: this.webhookUri(appId),
-        manifestLaunchUrl: this.buildManifestLaunchUrlFor(appId, input.persona.name),
+        callbackUrl: this.callbackUriForPublication(publication.id),
+        webhookUrl: this.webhookPlaceholderUri(),
+        manifestLaunchUrl: this.buildManifestLaunchUrlForPublication(
+          publication.id,
+          input.persona.name,
+        ),
       },
     };
   }
 
   /**
-   * Build the Slack "Create from manifest" URL for a freshly-allocated
-   * appId + persona. Public so the handoff setup-page can render the same
-   * one-click button without re-entering the wizard. Pure getter — no I/O.
+   * Build the Slack "Create from manifest" URL for a publication-first shell.
+   * The manifest's redirect_url is keyed on the publication id; the events
+   * request URL is the placeholder `/slack/webhook/app/__pending__` until
+   * the OAuth callback rewrites it (the user can paste the final webhook
+   * URL into Slack's UI after install completes — Slack stores it
+   * server-side, manifest is read-once at app create).
+   *
+   * Why a placeholder for the webhook URL: it must include the Slack-side
+   * app id (which Slack only assigns when the manifest is created), but the
+   * manifest is what creates the app. The manifest UI shows the URL so the
+   * user can copy-paste, but Slack also accepts a self-update via the
+   * Events Subscriptions admin page after install. Documented in the
+   * wizard.
    */
-  buildManifestLaunchUrlFor(appId: string, personaName: string): string {
+  buildManifestLaunchUrlForPublication(
+    publicationId: string,
+    personaName: string,
+  ): string {
     const manifest = buildManifest({
       personaName,
-      webhookUrl: this.webhookUri(appId),
-      redirectUrl: this.callbackUri(appId),
+      // Webhook URL has to be set to *something* in the manifest; we use the
+      // hosted gateway's pending placeholder. The wizard's post-install step
+      // surfaces the real per-app URL once we know slack_app_id (after
+      // OAuth callback). Slack's UI accepts editing this after the fact.
+      webhookUrl: this.webhookPlaceholderUri(),
+      redirectUrl: this.callbackUriForPublication(publicationId),
       botScopes: this.config.botScopes ?? DEFAULT_SLACK_BOT_SCOPES,
       userScopes: this.config.userScopes ?? DEFAULT_SLACK_USER_SCOPES,
       subscribedEvents: DEFAULT_SLACK_SUBSCRIBED_EVENTS,
@@ -249,9 +303,9 @@ export class SlackProvider implements IntegrationProvider {
     if (payload.kind === "handoff_link") {
       return this.createHandoffLink(payload);
     }
-    if (payload.kind === "oauth_callback_dedicated") {
+    if (payload.kind === "oauth_callback_pub") {
       return this.completeInstall(
-        (payload.appId as string) ?? "",
+        (payload.publicationId as string) ?? "",
         (payload.code as string) ?? "",
         (payload.state as string) ?? "",
       );
@@ -276,42 +330,63 @@ export class SlackProvider implements IntegrationProvider {
 
     const form = await this.container.jwt.verify<{
       kind: string;
+      publicationId: string;
       userId: string;
-      agentId: string;
-      environmentId: string;
-      persona: Persona;
       returnUrl: string;
-      appId: string;
     }>(formToken);
-    if (form.kind !== "slack.a1.form") {
+    if (form.kind !== "slack.pub.form") {
       throw new Error("submit_credentials: invalid formToken kind");
     }
-    if (!form.appId) {
-      throw new Error("submit_credentials: formToken missing appId — please restart the publish flow");
+    if (!form.publicationId) {
+      throw new Error(
+        "submit_credentials: formToken missing publicationId — please restart the publish flow",
+      );
     }
 
-    // Upsert keyed on appId — re-submits don't create duplicate rows.
-    // App row uses webhookSecret column for the signing secret (same
-    // AppRepo interface as Linear; semantically Slack's "webhook secret" IS
-    // its signing secret).
-    const tenantId = await this.container.tenants.resolveByUserId(form.userId);
-    const app = await this.container.apps.insert({
-      id: form.appId,
-      tenantId,
-      publicationId: null,
+    // Verify the publication is in a state where credentials can still be
+    // staged. Allow re-paste at pending_setup OR credentials_filled OR
+    // awaiting_install (user noticed a typo after starting OAuth — letting
+    // them rewind without re-creating the shell is the whole point).
+    const pub = await this.container.publications.get(form.publicationId);
+    if (!pub) {
+      throw new Error(
+        "submit_credentials: publication not found — it may have been deleted; restart the publish flow",
+      );
+    }
+    if (pub.status === "live" || pub.status === "unpublished") {
+      throw new Error(
+        `submit_credentials: publication is '${pub.status}', credentials cannot be re-pasted at this stage`,
+      );
+    }
+
+    // Encrypt with the same Crypto + label the rest of the integrations
+    // subsystem uses. Helper port handles the AES-GCM + label binding.
+    const clientSecretCipher = await this.container.crypto.encrypt(clientSecret);
+    const signingSecretCipher = await this.container.crypto.encrypt(signingSecret);
+    await this.container.publications.setCredentials(pub.id, {
       clientId,
-      clientSecret,
-      webhookSecret: signingSecret,
+      clientSecretCipher,
+      signingSecretCipher,
     });
+    // Move to credentials_filled unless already past it. setCredentials
+    // already promotes pending_setup → credentials_filled, but we want the
+    // wizard's next step to dispatch off the latest known status (e.g. if
+    // user already kicked off OAuth and is now re-pasting after a typo,
+    // status stays at awaiting_install).
+    if (pub.status === "pending_setup") {
+      await this.container.publications.updateStatus(pub.id, "awaiting_install");
+    } else if (pub.status === "needs_reauth") {
+      // Re-credentialing after a token revocation. Keep the bound install
+      // alive (the user may want to re-OAuth without losing channels) but
+      // signal that fresh OAuth is needed.
+      await this.container.publications.updateStatus(pub.id, "awaiting_install");
+    }
 
     const state = await this.container.jwt.sign(
       {
-        kind: "slack.oauth.dedicated",
-        appId: app.id,
+        kind: "slack.oauth.pub",
+        publicationId: pub.id,
         userId: form.userId,
-        agentId: form.agentId,
-        environmentId: form.environmentId,
-        persona: form.persona,
         returnUrl: form.returnUrl,
         nonce: this.container.ids.generate(),
       },
@@ -319,7 +394,7 @@ export class SlackProvider implements IntegrationProvider {
     );
     const url = buildAuthorizeUrl({
       clientId,
-      redirectUri: this.callbackUri(app.id),
+      redirectUri: this.callbackUriForPublication(pub.id),
       botScopes: this.config.botScopes ?? DEFAULT_SLACK_BOT_SCOPES,
       userScopes: this.config.userScopes ?? DEFAULT_SLACK_USER_SCOPES,
       state,
@@ -330,50 +405,67 @@ export class SlackProvider implements IntegrationProvider {
       step: "install_link",
       data: {
         url,
-        appId: app.id,
-        callbackUrl: this.callbackUri(app.id),
-        webhookUrl: this.webhookUri(app.id),
+        publicationId: pub.id,
+        callbackUrl: this.callbackUriForPublication(pub.id),
+        // The Events Request URL must include slack_app_id, which Slack only
+        // assigns at App-create. We surface a placeholder; once OAuth lands
+        // and we know slack_app_id, the wizard re-fetches and the user can
+        // paste the real URL into Slack's Event Subscriptions UI. The very
+        // first inbound webhook is the url_verification handshake — Slack
+        // hits it with the same app_id we just learned, so we'll be ready.
+        webhookUrl: this.webhookPlaceholderUri(),
       },
     };
   }
 
   private async completeInstall(
-    appId: string,
+    publicationId: string,
     code: string,
     stateToken: string,
   ): Promise<InstallComplete> {
-    if (!appId) throw new Error("Slack OAuth callback: missing appId");
+    if (!publicationId) throw new Error("Slack OAuth callback: missing publicationId");
     if (!code) throw new Error("Slack OAuth callback: missing code");
     if (!stateToken) throw new Error("Slack OAuth callback: missing state");
 
     const state = await this.container.jwt.verify<{
       kind: string;
-      appId: string;
+      publicationId: string;
       userId: string;
-      agentId: string;
-      environmentId: string;
-      persona: Persona;
       returnUrl: string;
     }>(stateToken);
-    if (state.kind !== "slack.oauth.dedicated") {
+    if (state.kind !== "slack.oauth.pub") {
       throw new Error("Slack OAuth callback: invalid state kind");
     }
-    if (state.appId !== appId) {
-      throw new Error("Slack OAuth callback: appId mismatch");
+    if (state.publicationId !== publicationId) {
+      throw new Error("Slack OAuth callback: publicationId mismatch");
     }
 
-    const app = await this.container.apps.get(appId);
-    if (!app) throw new Error("Slack OAuth callback: unknown appId");
+    const pub = await this.container.publications.get(publicationId);
+    if (!pub) throw new Error("Slack OAuth callback: unknown publicationId");
 
-    const clientSecret = await this.container.apps.getClientSecret(app.id);
+    // Idempotency: if this publication is already live (Slack retried or
+    // the user double-clicked), short-circuit. We DO NOT re-run token
+    // exchange — the Slack code is one-shot and would 400 anyway.
+    if (pub.status === "live" && pub.installationId && pub.installationId !== "") {
+      return { kind: "complete", publicationId: pub.id };
+    }
+
+    const credState = await this.container.publications.getCredentialState(publicationId);
+    if (!credState || !credState.hasClientSecret || !credState.clientId) {
+      throw new Error(
+        "Slack OAuth callback: publication has no client credentials — re-paste credentials before installing",
+      );
+    }
+    const clientId = credState.clientId;
+    const clientSecret = await this.container.publications.getClientSecret(publicationId);
     if (!clientSecret) {
       throw new Error("Slack OAuth callback: missing client secret");
     }
 
     const tokenReq = buildTokenExchangeBody({
       code,
-      redirectUri: this.callbackUri(app.id),
-      clientId: app.clientId,
+      redirectUri: this.callbackUriForPublication(publicationId),
+      clientId,
       clientSecret,
     });
     const tokenRes = await this.container.http.fetch({
@@ -397,7 +489,24 @@ export class SlackProvider implements IntegrationProvider {
       // when next exercised by an event.
     }
 
-    const tenantId = await this.container.tenants.resolveByUserId(state.userId);
+    // Materialize the slack_apps row keyed on Slack's app_id. The signing
+    // secret + client secret are still on the publication row — slack_apps
+    // is now mostly an audit / app→tenant link table; the webhook handler
+    // reads creds straight from the publication row.
+    const tenantId = pub.tenantId;
+    const app = await this.container.apps.insert({
+      id: token.app_id,
+      tenantId,
+      publicationId: pub.id,
+      clientId,
+      // Mirror the credentials onto the App row too, so legacy webhook
+      // paths that read via apps.getWebhookSecret still work. This is a
+      // double-write for transitional safety; future PR can drop the App
+      // table once the publication-first path is the only reader.
+      clientSecret,
+      webhookSecret: (await this.container.publications.getSigningSecret(publicationId)) ?? "",
+    });
+
     const installation = await this.container.installations.insert({
       tenantId,
       userId: state.userId,
@@ -428,8 +537,8 @@ export class SlackProvider implements IntegrationProvider {
     // rejects bot tokens; user token inherits the installer's permissions).
     const { vaultId: userVaultId } = await this.container.vaults.createCredentialForUser({
       userId: state.userId,
-      vaultName: `Slack · ${token.team.name} · ${state.persona.name} (user)`,
-      displayName: `Slack MCP user token (${state.persona.name})`,
+      vaultName: `Slack · ${token.team.name} · ${pub.persona.name} (user)`,
+      displayName: `Slack MCP user token (${pub.persona.name})`,
       mcpServerUrl: SLACK_MCP_URL,
       bearerToken: token.authed_user.access_token,
     });
@@ -439,28 +548,21 @@ export class SlackProvider implements IntegrationProvider {
     // calls Web API methods directly without going through MCP.
     const { vaultId: botVaultId } = await this.container.vaults.createCredentialForUser({
       userId: state.userId,
-      vaultName: `Slack · ${token.team.name} · ${state.persona.name} (bot)`,
-      displayName: `Slack bot token (${state.persona.name})`,
+      vaultName: `Slack · ${token.team.name} · ${pub.persona.name} (bot)`,
+      displayName: `Slack bot token (${pub.persona.name})`,
       mcpServerUrl: SLACK_API_URL,
       bearerToken: token.access_token,
     });
     await this.container.installations.setBotVaultId(installation.id, botVaultId);
 
-    const publication = await this.container.publications.insert({
-      tenantId,
-      userId: state.userId,
-      agentId: state.agentId,
+    // Bind the installation + slack_app_id back onto the publication row,
+    // flipping status='live'. Done last so an early failure leaves the row
+    // resumable (status stays at awaiting_install / credentials_filled).
+    await this.container.publications.bindInstallation({
+      publicationId: pub.id,
       installationId: installation.id,
-      environmentId: state.environmentId,
-      mode: "full",
-      status: "live",
-      persona: state.persona,
-      capabilities: new Set(
-        this.config.defaultCapabilities ?? ALL_SLACK_CAPABILITIES,
-      ),
-      sessionGranularity: this.config.defaultSessionGranularity ?? "per_channel",
+      slackAppId: token.app_id,
     });
-    await this.container.apps.setPublicationId(app.id, publication.id);
 
     // Probe mcp.slack.com with the user xoxp- token to detect whether the
     // App's "Model Context Protocol" toggle (Agents & AI Apps page) is on.
@@ -471,7 +573,7 @@ export class SlackProvider implements IntegrationProvider {
     // "still off, flip it here" warning with deeplink.
     const probe = await this.probeMcpEnabled(token.authed_user.access_token, token.app_id);
 
-    return { kind: "complete", publicationId: publication.id, capabilityProbe: probe };
+    return { kind: "complete", publicationId: pub.id, capabilityProbe: probe };
   }
 
   /**
@@ -549,17 +651,15 @@ export class SlackProvider implements IntegrationProvider {
     if (!formToken) throw new Error("handoff_link: formToken required");
     const form = await this.container.jwt.verify<{
       kind: string;
+      publicationId: string;
       userId: string;
-      agentId: string;
-      environmentId: string;
-      persona: Persona;
       returnUrl: string;
     }>(formToken);
-    if (form.kind !== "slack.a1.form") {
+    if (form.kind !== "slack.pub.form") {
       throw new Error("handoff_link: invalid formToken kind");
     }
     const handoffToken = await this.container.jwt.sign(
-      { ...form, kind: "slack.a1.form", handoff: true },
+      { ...form, kind: "slack.pub.form", handoff: true },
       7 * 24 * 60 * 60,
     );
     return {
@@ -577,15 +677,32 @@ export class SlackProvider implements IntegrationProvider {
   async handleWebhook(req: WebhookRequest): Promise<WebhookOutcome> {
     // App lookup happens before signature verify so we can verify even on
     // url_verification (the very first webhook a new URL receives).
+    //
+    // Primary lookup: by Slack-side app_id → slack_publications row (the
+    // publication-first row holds the signing secret). Fallback: legacy
+    // slack_apps row (kept double-written for transitional safety; can be
+    // removed once all installs are publication-first).
     const appId = this.appIdFromHeaders(req);
     if (!appId) {
       return { handled: false, reason: "missing_app_id" };
     }
-    const appRow = await this.container.apps.get(appId);
-    if (!appRow) {
-      return { handled: false, reason: "unknown_app_id" };
+
+    // Resolve publication + signing secret. We'll go publication-first; the
+    // legacy app-row path is kept as a fallback during the transition.
+    let pubId: string | null = null;
+    let signingSecret: string | null = null;
+    const pubByApp = await this.container.publications.findBySlackAppId(appId);
+    if (pubByApp) {
+      pubId = pubByApp.id;
+      signingSecret = await this.container.publications.getSigningSecret(pubByApp.id);
+    } else {
+      const appRow = await this.container.apps.get(appId);
+      if (!appRow) {
+        return { handled: false, reason: "unknown_app_id" };
+      }
+      pubId = appRow.publicationId;
+      signingSecret = await this.container.apps.getWebhookSecret(appId);
     }
-    const signingSecret = await this.container.apps.getWebhookSecret(appId);
     if (!signingSecret) {
       return { handled: false, reason: "missing_signing_secret" };
     }
@@ -634,11 +751,11 @@ export class SlackProvider implements IntegrationProvider {
     const env = raw as RawEventCallback;
 
     // Find the installation behind this app.
-    if (!appRow.publicationId) {
+    if (!pubId) {
       // App registered but install hasn't completed — drop.
       return { handled: false, reason: "no_publication_yet" };
     }
-    const pub = await this.container.publications.get(appRow.publicationId);
+    const pub = await this.container.publications.get(pubId);
     if (!pub) {
       return { handled: false, reason: "publication_not_found" };
     }
@@ -1562,8 +1679,21 @@ export class SlackProvider implements IntegrationProvider {
     return await this.container.installations.getBotVaultId(installationId);
   }
 
-  private callbackUri(appId: string): string {
-    return `${this.config.gatewayOrigin}/slack/oauth/app/${appId}/callback`;
+  /**
+   * Publication-first callback URI. Embeds the OMA publication id so the
+   * OAuth callback can find the right shell, read its encrypted client
+   * secret, and complete the install.
+   */
+  private callbackUriForPublication(publicationId: string): string {
+    return `${this.config.gatewayOrigin}/slack/oauth/pub/${publicationId}/callback`;
+  }
+  /**
+   * Webhook URL placeholder. Real URLs are slack-app-id keyed and only
+   * known after OAuth completes. We hand the user a placeholder during
+   * the wizard; the post-install screen surfaces the real URL.
+   */
+  private webhookPlaceholderUri(): string {
+    return `${this.config.gatewayOrigin}/slack/webhook/app/__pending__`;
   }
   private webhookUri(appId: string): string {
     return `${this.config.gatewayOrigin}/slack/webhook/app/${appId}`;

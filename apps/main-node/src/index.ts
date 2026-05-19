@@ -882,7 +882,7 @@ if (platformRootSecret) {
           },
           slack: {
             installations: new SqlSlackInstallationRepo(sql, slackCrypto, slackIds),
-            publications: new SqlSlackPublicationRepo(sql, slackIds),
+            publications: new SqlSlackPublicationRepo(sql, slackIds, slackCrypto),
             apps: new SqlSlackAppRepo(sql, slackCrypto, slackIds),
           },
         };
@@ -1021,7 +1021,7 @@ if (platformRootSecret) {
           },
           slack: {
             installations: new SqlSlackInstallationRepo(sql, slackCrypto, slackIds),
-            publications: new SqlSlackPublicationRepo(sql, slackIds),
+            publications: new SqlSlackPublicationRepo(sql, slackIds, slackCrypto),
             apps: new SqlSlackAppRepo(sql, slackCrypto, slackIds),
           },
         };

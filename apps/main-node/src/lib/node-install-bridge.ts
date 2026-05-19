@@ -184,8 +184,8 @@ export class NodeInstallBridge implements InstallBridge {
     const result = await provider.continueInstall({
       publicationId: null,
       payload: {
-        kind: "oauth_callback_dedicated",
-        appId: args.providerInstallationId,
+        kind: "oauth_callback_pub",
+        publicationId: args.providerInstallationId,
         code: args.code,
         state: stateRaw,
       },
@@ -425,7 +425,7 @@ export class NodeInstallBridge implements InstallBridge {
     const baseSlack: SlackContainer = {
       ...repos,
       installations: new SqlSlackInstallationRepo(this.opts.sql, slackCrypto, slackIds),
-      publications: new SqlSlackPublicationRepo(this.opts.sql, slackIds),
+      publications: new SqlSlackPublicationRepo(this.opts.sql, slackIds, slackCrypto),
       apps: new SqlSlackAppRepo(this.opts.sql, slackCrypto, slackIds),
       webhookEvents: new SqlSlackWebhookEventStore(this.opts.sql),
       sessionScopes: repos.sessionScopes,

@@ -58,7 +58,7 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
     },
     slack: {
       installations: new D1SlackInstallationRepo(env.INTEGRATIONS_DB, crypto, ids),
-      publications: new D1SlackPublicationRepo(env.INTEGRATIONS_DB, ids),
+      publications: new D1SlackPublicationRepo(env.INTEGRATIONS_DB, ids, crypto),
       apps: new D1SlackAppRepo(env.INTEGRATIONS_DB, crypto, ids),
     },
   };

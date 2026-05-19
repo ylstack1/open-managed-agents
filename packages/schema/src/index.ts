@@ -279,6 +279,14 @@ export async function applySchema(opts: ApplySchemaOptions): Promise<void> {
   await addColumnIfMissing(sql, "sessions", "archived_at", "BIGINT");
   await addColumnIfMissing(sql, "sessions", "terminated_at", "BIGINT");
 
+  // Publication-first install (apps/main/migrations-integrations/0002):
+  // staging columns on slack_publications. All NULLABLE; existing live
+  // publications (status='live', installation_id NOT NULL) keep working.
+  await addColumnIfMissing(sql, "slack_publications", "client_id", "TEXT");
+  await addColumnIfMissing(sql, "slack_publications", "client_secret_cipher", "TEXT");
+  await addColumnIfMissing(sql, "slack_publications", "signing_secret_cipher", "TEXT");
+  await addColumnIfMissing(sql, "slack_publications", "slack_app_id", "TEXT");
+
   if (includeBetterAuth) {
     await applyBetterAuthSchema({ sql, dialect });
   }
@@ -705,12 +713,24 @@ export async function applyIntegrationsSchema(opts: {
         "capabilities"          TEXT NOT NULL,
         "session_granularity"   TEXT NOT NULL,
         "created_at"            ${intT} NOT NULL,
-        "unpublished_at"        ${intT}
+        "unpublished_at"        ${intT},
+        -- Publication-first credential staging (migration 0002).
+        -- client_id is plaintext (public-ish OAuth client id).
+        -- *_cipher columns are AES-GCM encrypted with PLATFORM_ROOT_SECRET +
+        -- label "integrations.tokens".
+        -- slack_app_id is the Slack-side app id (e.g. A07ABC), populated on
+        -- OAuth callback so we can find a publication by Slack-app-id later.
+        "client_id"              TEXT,
+        "client_secret_cipher"   TEXT,
+        "signing_secret_cipher"  TEXT,
+        "slack_app_id"           TEXT
       );
       CREATE INDEX IF NOT EXISTS "idx_slack_publications_installation"
         ON "slack_publications" ("installation_id");
       CREATE INDEX IF NOT EXISTS "idx_slack_publications_user_agent"
         ON "slack_publications" ("user_id", "agent_id");
+      CREATE INDEX IF NOT EXISTS "idx_slack_publications_slack_app_id"
+        ON "slack_publications" ("slack_app_id");
 
       CREATE TABLE IF NOT EXISTS "slack_webhook_events" (
         "delivery_id"     TEXT PRIMARY KEY NOT NULL,

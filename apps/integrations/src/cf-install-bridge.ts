@@ -111,8 +111,8 @@ export class CfInstallBridge implements InstallBridge {
     const result = await providers.slack.continueInstall({
       publicationId: null,
       payload: {
-        kind: "oauth_callback_dedicated",
-        appId: args.providerInstallationId,
+        kind: "oauth_callback_pub",
+        publicationId: args.providerInstallationId,
         code: args.code,
         state: stateRaw,
       },

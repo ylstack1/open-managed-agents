@@ -73,12 +73,24 @@ export interface A1FormStep {
    * Linear's analogous flow is built into linear.app and needs no URL.
    */
   manifestLaunchUrl?: string | null;
+  /**
+   * Slack publication-first only: the OMA publication id minted by the
+   * shell-create. The wizard surfaces it for ops/debug; the API client uses
+   * it implicitly via the formToken JWT (no client-side state needed).
+   */
+  publicationId?: string;
 }
 
 export interface A1InstallLink {
   /** OAuth URL the user clicks to authorize the install. */
   url: string;
-  appId: string;
+  /**
+   * Slack publication-first: the OMA publication id (legacy Linear A1: app
+   * id). Both flows surface an opaque identifier here; the wizard just shows
+   * it for the user.
+   */
+  appId?: string;
+  publicationId?: string;
   callbackUrl: string;
   webhookUrl: string;
 }

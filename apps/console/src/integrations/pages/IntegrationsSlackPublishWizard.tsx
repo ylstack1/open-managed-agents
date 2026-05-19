@@ -466,9 +466,11 @@ function A1CredentialsStep(props: {
             <CopyRow label="Events Request URL" value={props.form.webhookUrl} />
           </div>
           <p className="text-[12px] text-fg-subtle mt-2">
-            Paste the Redirect URL under <strong>OAuth &amp; Permissions</strong>; paste the
-            Events Request URL under <strong>Event Subscriptions</strong> and wait for
-            the green "Verified" check (Slack hits the URL with a signed handshake).
+            Paste the Redirect URL under <strong>OAuth &amp; Permissions</strong>; the
+            Events Request URL above ends in <code>/__pending__</code> as a placeholder —
+            after install completes, the success screen surfaces the real URL keyed on
+            your Slack app id; paste that into <strong>Event Subscriptions</strong>{" "}
+            and wait for the green "Verified" check.
             Subscribe to bot events: <code>app_mention</code>,{" "}
             <code>message.channels</code>, <code>message.im</code>,{" "}
             <code>message.groups</code>, <code>message.mpim</code>,{" "}
