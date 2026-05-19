@@ -481,6 +481,54 @@ function mountSlackWebhook(
   handler: WebhookHandler,
   rl: RateLimitHooks | undefined,
 ) {
+  // Publication-first webhook URL. Manifest baked at api.slack.com points
+  // here from minute 1 (pub_id is known at shell-create time, before the
+  // Slack app exists). Provider's handleWebhook reads x-internal-pub-id,
+  // resolves the publication's slack_app_id, and continues exactly the
+  // same dispatch path the legacy app-id route uses.
+  app.post("/slack/webhook/pub/:pubId", async (c) => {
+    const pubId = c.req.param("pubId");
+    const rawBody = await c.req.raw.text();
+    const headers: Record<string, string> = {};
+    c.req.raw.headers.forEach((value, key) => (headers[key.toLowerCase()] = value));
+    if (pubId) headers["x-internal-pub-id"] = pubId;
+    const outcome = await handler({
+      providerId: "slack",
+      installationId: pubId,
+      deliveryId: null,
+      headers,
+      rawBody,
+    });
+    if (outcome.challengeResponse !== undefined) {
+      return new Response(outcome.challengeResponse, {
+        status: 200,
+        headers: { "content-type": "text/plain" },
+      });
+    }
+    if (outcome.tenantId && rl?.shouldDropForTenant) {
+      const dropped = await rl.shouldDropForTenant(outcome.tenantId);
+      if (dropped) return c.json({ ok: false, reason: "tenant_rate_limited" }, 200);
+    }
+    if (outcome.deferredWork) {
+      const work = outcome.deferredWork().catch((err) => {
+        log.warn(
+          { op: "slack.webhook.deferred.failed", err: err instanceof Error ? err.message : String(err) },
+          "slack deferred work failed",
+        );
+      });
+      try {
+        c.executionCtx?.waitUntil(work);
+      } catch {
+        // see legacy route below
+      }
+    }
+    return c.json({ ok: outcome.handled, reason: outcome.reason ?? null }, 200);
+  });
+
+  // Legacy app-keyed route. Pre-publication-first installs still have
+  // this URL persisted in their Slack app config; keep the route alive
+  // so existing live publications keep delivering until they're
+  // re-installed under the new pub-keyed URL.
   app.post("/slack/webhook/app/:appId", async (c) => {
     const appId = c.req.param("appId");
     const rawBody = await c.req.raw.text();

@@ -250,7 +250,7 @@ export class SlackProvider implements IntegrationProvider {
         suggestedAppName: input.persona.name,
         suggestedAvatarUrl: input.persona.avatarUrl,
         callbackUrl: this.callbackUriForPublication(publication.id),
-        webhookUrl: this.webhookPlaceholderUri(),
+        webhookUrl: this.webhookForPublication(publication.id),
         manifestLaunchUrl: this.buildManifestLaunchUrlForPublication(
           publication.id,
           input.persona.name,
@@ -280,11 +280,11 @@ export class SlackProvider implements IntegrationProvider {
   ): string {
     const manifest = buildManifest({
       personaName,
-      // Webhook URL has to be set to *something* in the manifest; we use the
-      // hosted gateway's pending placeholder. The wizard's post-install step
-      // surfaces the real per-app URL once we know slack_app_id (after
-      // OAuth callback). Slack's UI accepts editing this after the fact.
-      webhookUrl: this.webhookPlaceholderUri(),
+      // Webhook URL is keyed on pub_id which we already have here. The
+      // gateway resolves pub_id → publication.slack_app_id at delivery
+      // time, so the URL stays valid from manifest-build through OAuth
+      // and beyond. No more placeholder + post-install paste step.
+      webhookUrl: this.webhookForPublication(publicationId),
       redirectUrl: this.callbackUriForPublication(publicationId),
       botScopes: this.config.botScopes ?? DEFAULT_SLACK_BOT_SCOPES,
       userScopes: this.config.userScopes ?? DEFAULT_SLACK_USER_SCOPES,
@@ -371,7 +371,7 @@ export class SlackProvider implements IntegrationProvider {
         suggestedAppName: pub.persona.name,
         suggestedAvatarUrl: pub.persona.avatarUrl,
         callbackUrl: this.callbackUriForPublication(pub.id),
-        webhookUrl: this.webhookPlaceholderUri(),
+        webhookUrl: this.webhookForPublication(pub.id),
         manifestLaunchUrl: this.buildManifestLaunchUrlForPublication(
           pub.id,
           pub.persona.name,
@@ -472,13 +472,11 @@ export class SlackProvider implements IntegrationProvider {
         url,
         publicationId: pub.id,
         callbackUrl: this.callbackUriForPublication(pub.id),
-        // The Events Request URL must include slack_app_id, which Slack only
-        // assigns at App-create. We surface a placeholder; once OAuth lands
-        // and we know slack_app_id, the wizard re-fetches and the user can
-        // paste the real URL into Slack's Event Subscriptions UI. The very
-        // first inbound webhook is the url_verification handshake — Slack
-        // hits it with the same app_id we just learned, so we'll be ready.
-        webhookUrl: this.webhookPlaceholderUri(),
+        // Webhook URL is keyed on pub_id (NOT slack_app_id), known from
+        // shell-create time, so the manifest baked at api.slack.com is
+        // already correct. No "after install completes, paste the real
+        // URL" step.
+        webhookUrl: this.webhookForPublication(pub.id),
       },
     };
   }
@@ -743,30 +741,48 @@ export class SlackProvider implements IntegrationProvider {
     // App lookup happens before signature verify so we can verify even on
     // url_verification (the very first webhook a new URL receives).
     //
-    // Primary lookup: by Slack-side app_id → slack_publications row (the
-    // publication-first row holds the signing secret). Fallback: legacy
-    // slack_apps row (kept double-written for transitional safety; can be
-    // removed once all installs are publication-first).
-    const appId = this.appIdFromHeaders(req);
-    if (!appId) {
-      return { handled: false, reason: "missing_app_id" };
-    }
-
-    // Resolve publication + signing secret. We'll go publication-first; the
-    // legacy app-row path is kept as a fallback during the transition.
+    // Resolve publication + signing secret. Two webhook URL shapes:
+    //
+    //   1. /slack/webhook/pub/:pubId  (publication-first, post-2026-05-19)
+    //      Gateway sets x-internal-pub-id → look up the publication by id,
+    //      derive its slack_app_id from the row.
+    //   2. /slack/webhook/app/:appId  (legacy)
+    //      Gateway sets x-internal-app-id → look up the publication via
+    //      findBySlackAppId, fall back to slack_apps for transitional safety.
     let pubId: string | null = null;
     let signingSecret: string | null = null;
-    const pubByApp = await this.container.publications.findBySlackAppId(appId);
-    if (pubByApp) {
-      pubId = pubByApp.id;
-      signingSecret = await this.container.publications.getSigningSecret(pubByApp.id);
-    } else {
-      const appRow = await this.container.apps.get(appId);
-      if (!appRow) {
-        return { handled: false, reason: "unknown_app_id" };
+    let appId: string | null = null;
+    const headerPubId = req.headers["x-internal-pub-id"];
+    if (typeof headerPubId === "string" && headerPubId.length > 0) {
+      const pub = await this.container.publications.get(headerPubId);
+      if (!pub) {
+        return { handled: false, reason: "unknown_publication_id" };
       }
-      pubId = appRow.publicationId;
-      signingSecret = await this.container.apps.getWebhookSecret(appId);
+      // pub-keyed delivery: skip findBySlackAppId (we know the row).
+      pubId = pub.id;
+      signingSecret = await this.container.publications.getSigningSecret(pub.id);
+      const credState = await this.container.publications.getCredentialState(pub.id);
+      appId = credState?.slackAppId ?? null;
+      if (!appId) {
+        return { handled: false, reason: "publication_not_yet_installed" };
+      }
+    } else {
+      appId = this.appIdFromHeaders(req);
+      if (!appId) {
+        return { handled: false, reason: "missing_app_id" };
+      }
+      const pubByApp = await this.container.publications.findBySlackAppId(appId);
+      if (pubByApp) {
+        pubId = pubByApp.id;
+        signingSecret = await this.container.publications.getSigningSecret(pubByApp.id);
+      } else {
+        const appRow = await this.container.apps.get(appId);
+        if (!appRow) {
+          return { handled: false, reason: "unknown_app_id" };
+        }
+        pubId = appRow.publicationId;
+        signingSecret = await this.container.apps.getWebhookSecret(appId);
+      }
     }
     if (!signingSecret) {
       return { handled: false, reason: "missing_signing_secret" };
@@ -1753,13 +1769,23 @@ export class SlackProvider implements IntegrationProvider {
     return `${this.config.gatewayOrigin}/slack/oauth/pub/${publicationId}/callback`;
   }
   /**
-   * Webhook URL placeholder. Real URLs are slack-app-id keyed and only
-   * known after OAuth completes. We hand the user a placeholder during
-   * the wizard; the post-install screen surfaces the real URL.
+   * Webhook URL keyed on the OMA publication id (NOT the Slack app id).
+   * Publication-first install means we know pub_id at shell-create time —
+   * before the user even creates the Slack app — so the manifest baked at
+   * api.slack.com gets the final URL from minute one. No more "after
+   * install completes, paste the real URL into Event Subscriptions"
+   * manual step. Gateway routes /slack/webhook/pub/:pubId resolve the
+   * publication's slack_app_id and continue exactly the same dispatch
+   * path the old /slack/webhook/app/:appId route used.
    */
-  private webhookPlaceholderUri(): string {
-    return `${this.config.gatewayOrigin}/slack/webhook/app/__pending__`;
+  private webhookForPublication(publicationId: string): string {
+    return `${this.config.gatewayOrigin}/slack/webhook/pub/${publicationId}`;
   }
+  /**
+   * Legacy alias kept for any pre-publication-first install row whose
+   * stored slack_apps.webhook_url still references the app-keyed shape.
+   * New manifests never use this.
+   */
   private webhookUri(appId: string): string {
     return `${this.config.gatewayOrigin}/slack/webhook/app/${appId}`;
   }

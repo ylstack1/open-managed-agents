@@ -36,7 +36,7 @@ describe("SlackProvider — publication-first install flow", () => {
       `https://gw/slack/oauth/pub/${pubId}/callback`,
     );
     expect(result.data.webhookUrl as string).toBe(
-      "https://gw/slack/webhook/app/__pending__",
+      `https://gw/slack/webhook/pub/${pubId}`,
     );
     // Manifest launch URL is pre-baked with the pub-keyed redirect URL.
     const manifestUrl = result.data.manifestLaunchUrl as string;
