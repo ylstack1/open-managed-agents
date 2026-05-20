@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { IntegrationsApi } from "../api/client";
 import type { A1FormStep, A1InstallLink } from "../api/types";
@@ -132,12 +132,17 @@ export function IntegrationsSlackPublishWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Default persona name to the chosen agent's name. Skip once the user has
+  // edited the field — otherwise clearing the input would refill it from the
+  // effect's personaName dep, making the field feel un-clearable.
+  const personaEditedRef = useRef(false);
   useEffect(() => {
-    if (!personaName && agentId) {
+    if (personaEditedRef.current) return;
+    if (agentId) {
       const agent = agents.find((a) => a.id === agentId);
       if (agent) setPersonaName(agent.name);
     }
-  }, [agentId, agents, personaName]);
+  }, [agentId, agents]);
 
   const returnUrl = `${window.location.origin}/integrations/slack`;
 
@@ -274,7 +279,7 @@ export function IntegrationsSlackPublishWizard({
             envId={envId}
             setEnvId={setEnvId}
             personaName={personaName}
-            setPersonaName={setPersonaName}
+            setPersonaName={(v) => { personaEditedRef.current = true; setPersonaName(v); }}
             personaAvatar={personaAvatar}
             setPersonaAvatar={setPersonaAvatar}
             working={working}

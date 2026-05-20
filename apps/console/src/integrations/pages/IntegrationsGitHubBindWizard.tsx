@@ -141,13 +141,17 @@ export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Default persona name to the chosen agent's name.
+  // Default persona name to the chosen agent's name. Skip once the user has
+  // edited the field — otherwise clearing the input would refill it from the
+  // effect's persona dep, making the field feel un-clearable.
+  const personaEditedRef = useRef(false);
   useEffect(() => {
-    if (!persona && agentId) {
+    if (personaEditedRef.current) return;
+    if (agentId) {
       const a = agents.find((x) => x.id === agentId);
       if (a) setPersona(a.name);
     }
-  }, [agentId, agents, persona]);
+  }, [agentId, agents]);
 
   // Tear down any in-flight poll on unmount. Without this, navigating away
   // mid-flow leaves a setInterval firing fetches against a dead component.
@@ -282,7 +286,7 @@ export function IntegrationsGitHubBindWizard({ loadAgents, loadEnvironments }: P
             persona={persona}
             onAgent={setAgentId}
             onEnv={setEnvId}
-            onPersona={setPersona}
+            onPersona={(v) => { personaEditedRef.current = true; setPersona(v); }}
             onSubmit={startBind}
             error={error}
           />
