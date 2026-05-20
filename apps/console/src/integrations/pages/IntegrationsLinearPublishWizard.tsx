@@ -73,7 +73,6 @@ export function IntegrationsLinearPublishWizard({
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
-  const [workspaceSlug, setWorkspaceSlug] = useState("");
   const [installLink, setInstallLink] = useState<LinearPublicationInstallLink | null>(null);
 
   useEffect(() => {
@@ -267,8 +266,6 @@ export function IntegrationsLinearPublishWizard({
             setClientSecret={setClientSecret}
             webhookSecret={webhookSecret}
             setWebhookSecret={setWebhookSecret}
-            workspaceSlug={workspaceSlug}
-            setWorkspaceSlug={setWorkspaceSlug}
             working={working}
             onSubmit={submitCredentials}
           />
@@ -420,8 +417,6 @@ function CredentialsStep(props: {
   setClientSecret: (v: string) => void;
   webhookSecret: string;
   setWebhookSecret: (v: string) => void;
-  workspaceSlug: string;
-  setWorkspaceSlug: (v: string) => void;
   working: boolean;
   onSubmit: () => void;
 }) {
@@ -431,27 +426,10 @@ function CredentialsStep(props: {
         <h2 className="text-[15px] font-medium text-fg mb-1.5">
           Create a Linear OAuth app
         </h2>
-        <div className="mb-3 flex items-center gap-2 flex-wrap">
-          <label className="text-[13px] text-fg-muted">Linear workspace slug</label>
-          <input
-            type="text"
-            value={props.workspaceSlug}
-            onChange={(e) => props.setWorkspaceSlug(e.target.value.trim().toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-            placeholder="e.g. boai"
-            className="px-2 py-1 border border-border rounded-md bg-bg text-[13px] w-32"
-          />
-          <span className="text-[12px] text-fg-subtle">
-            (the segment in <code>linear.app/&lt;slug&gt;/...</code>)
-          </span>
-        </div>
         <p className="text-[13px] text-fg-muted mb-3">
           Open{" "}
           <a
-            href={
-              props.workspaceSlug
-                ? `https://linear.app/${props.workspaceSlug}/settings/api/applications/new`
-                : "https://linear.app/settings/api/applications/new"
-            }
+            href="https://linear.app/settings/api/applications/new"
             target="_blank"
             rel="noreferrer"
             className="text-brand hover:underline"
