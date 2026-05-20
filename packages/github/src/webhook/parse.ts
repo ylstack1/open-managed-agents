@@ -302,13 +302,20 @@ export function parseWebhook({
     const comment = raw.comment;
     const isPr = !!issue.pull_request;
     const mentionsBot = botLogin != null && commentMentions(comment.body, botLogin);
-    // Only wake on direct mention — without it, every comment in every
-    // watched repo would dispatch.
+    // Two routes for `created`:
+    //  - mentionsBot → issue_mentioned / pr_mentioned: dispatcher will
+    //    claimPending and spawn a new session if none exists.
+    //  - !mentionsBot → issue_commented / pr_commented: dispatcher will
+    //    resume the existing session for this issue if one is active, and
+    //    drop the event otherwise. Mirrors Linear's commentReply route —
+    //    once the bot is engaged on an issue, the human shouldn't need to
+    //    re-@ it to continue the thread.
     const kind =
       senderIsBot ? null :
-      action === "created" && mentionsBot
+      action !== "created" ? null :
+      mentionsBot
         ? (isPr ? "pr_mentioned" : "issue_mentioned")
-        : null;
+        : (isPr ? "pr_commented" : "issue_commented");
     return {
       ...base,
       kind,

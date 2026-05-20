@@ -1025,6 +1025,14 @@ export class GitHubProvider implements IntegrationProvider {
         );
         return existing.sessionId;
       }
+      // No-mention comment events (`issue_commented` / `pr_commented`): only
+      // resume an already-active session for the same issue, never spawn a
+      // new one. Mirrors Linear's commentReply route — once the bot is
+      // engaged, follow-ups don't need to re-@; without engagement, random
+      // comments shouldn't pull a session out of thin air.
+      if (event.kind === "issue_commented" || event.kind === "pr_commented") {
+        return null;
+      }
       const claimed = await this.container.githubIssueSessions.claimPending({
         tenantId: publication.tenantId,
         publicationId: publication.id,
