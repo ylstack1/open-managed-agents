@@ -231,13 +231,20 @@ export function parseWebhook({
       botLogin != null &&
       Array.isArray(issue.assignees) &&
       issue.assignees.some((a) => a.login === botLogin);
-    // Default matrix is "directly addressed only" — issues.opened fires for
-    // every new issue in the repo, which would be a noise firehose. A future
-    // `--mode triage` binding can opt back in by re-emitting issue_opened
-    // here when a flag is set; for now: assigned-to-bot only.
+    // Body-mention trigger on `opened`/`edited`: GitHub doesn't emit a
+    // separate `mentioned` action for issue bodies (only for comments),
+    // so we detect `@<bot>` in the issue body ourselves and route the
+    // opened/edited event as `issue_mentioned`. This stops short of
+    // triaging every new issue (which would be a firehose) — only issues
+    // that explicitly address the bot wake a session.
+    const bodyMentionsBot =
+      botLogin != null &&
+      typeof issue.body === "string" &&
+      commentMentions(issue.body, botLogin);
     const kind =
       senderIsBot ? null :
       action === "assigned" && isAssignedToBot ? "issue_assigned" :
+      (action === "opened" || action === "edited") && bodyMentionsBot ? "issue_mentioned" :
       null;
     return {
       ...base,
@@ -264,12 +271,15 @@ export function parseWebhook({
       botLogin != null &&
       Array.isArray(pr.requested_reviewers) &&
       pr.requested_reviewers.some((u) => u.login === botLogin);
-    // Same rationale as issues.opened: pull_request.opened fires on every
-    // new PR — opt-in via future --mode reviewer.
+    const bodyMentionsBot =
+      botLogin != null &&
+      typeof pr.body === "string" &&
+      commentMentions(pr.body, botLogin);
     const kind =
       senderIsBot ? null :
       action === "review_requested" && isReviewerBot ? "pr_review_requested" :
       action === "assigned" && isAssignedToBot ? "pr_assigned" :
+      (action === "opened" || action === "edited") && bodyMentionsBot ? "pr_mentioned" :
       null;
     return {
       ...base,
