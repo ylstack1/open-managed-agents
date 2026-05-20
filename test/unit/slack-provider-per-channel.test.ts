@@ -155,7 +155,9 @@ describe("SlackProvider — per_channel granularity", () => {
       expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("reaction_on_bot_message");
       expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("session_closed");
       expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("scheduleWakeup");
-      expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("chat.postMessage");
+      // Reply protocol pointer (semantic — no exact tool name baked in
+      // since Slack's MCP namespacing is provider-controlled).
+      expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("mcp__slack__");
       // Vocabulary denylist — agent must NOT leak these to Slack.
       expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("scan window");
       expect(SLACK_SIGNAL_PROTOCOL_PROMPT).toContain("debounce");
