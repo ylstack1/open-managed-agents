@@ -42,24 +42,43 @@ export class SqlCredentialRepo implements CredentialRepo {
 
   async insert(input: NewCredentialInput): Promise<CredentialRow> {
     const authCipher = await this.crypto.encrypt(JSON.stringify(input.auth));
-    try {
-      await runOnce(
-        this.db.insert(credentials).values({
-          id: input.id,
-          tenant_id: input.tenantId,
-          vault_id: input.vaultId,
-          display_name: input.displayName,
-          auth_type: input.auth.type,
-          mcp_server_url: input.auth.mcp_server_url ?? null,
-          provider: input.auth.provider ?? null,
-          auth: authCipher,
-          created_at: input.createdAt,
-        }),
+    // Pre-check the partial unique index condition. Cheaper than rolling
+    // back a failed INSERT and dialect-blind (the prior try/catch sniffed
+    // the driver's "UNIQUE constraint failed" message string, which broke
+    // after the Drizzle port wrapped errors and changed the format).
+    // Concurrent inserts of the same URL still race past this check, but
+    // the partial unique index catches the second one at INSERT time and
+    // bubbles as 500 — rare (the UI never races credentials).
+    if (input.auth.mcp_server_url) {
+      const existing = await getOne<{ id: string }>(
+        this.db
+          .select({ id: credentials.id })
+          .from(credentials)
+          .where(
+            and(
+              eq(credentials.tenant_id, input.tenantId),
+              eq(credentials.vault_id, input.vaultId),
+              eq(credentials.mcp_server_url, input.auth.mcp_server_url),
+              isNull(credentials.archived_at),
+            ),
+          )
+          .limit(1),
       );
-    } catch (err) {
-      if (isMcpUrlUniqueViolation(err)) throw new CredentialDuplicateMcpUrlError();
-      throw err;
+      if (existing) throw new CredentialDuplicateMcpUrlError();
     }
+    await runOnce(
+      this.db.insert(credentials).values({
+        id: input.id,
+        tenant_id: input.tenantId,
+        vault_id: input.vaultId,
+        display_name: input.displayName,
+        auth_type: input.auth.type,
+        mcp_server_url: input.auth.mcp_server_url ?? null,
+        provider: input.auth.provider ?? null,
+        auth: authCipher,
+        created_at: input.createdAt,
+      }),
+    );
     const row = await this.get(input.tenantId, input.vaultId, input.id);
     if (!row) throw new Error("credential vanished after insert");
     return row;
@@ -372,18 +391,6 @@ export class SqlCredentialRepo implements CredentialRepo {
 
 function msToIso(ms: number): string {
   return new Date(ms).toISOString();
-}
-
-function isMcpUrlUniqueViolation(err: unknown): boolean {
-  // D1/SQLite throws "UNIQUE constraint failed: ..." with the index columns.
-  // We check both the explicit index name and the column to stay robust to
-  // SQLite's error format variations.
-  if (!(err instanceof Error)) return false;
-  const msg = err.message;
-  return (
-    /unique constraint failed/i.test(msg) &&
-    (/mcp_server_url/i.test(msg) || /idx_credentials_mcp_url_active/i.test(msg))
-  );
 }
 
 /**
