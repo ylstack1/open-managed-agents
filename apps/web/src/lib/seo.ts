@@ -20,13 +20,14 @@ const SITE_URL = "https://openma.dev";
 const REPO_URL = "https://github.com/open-ma/open-managed-agents";
 const ORG_NAME = "Open Managed Agents";
 // Google's Organization.logo policy rejects SVG — Schema.org logo must
-// be a raster format (PNG/JPG/GIF), at least 112×112, ideally larger so
-// the SERP renderer can downscale cleanly. We use the 512×512 favicon
-// PNG that already ships in apps/web/public/ rather than a duplicate
-// brand file. SVG was the cause of Google rendering the auto-generated
-// "om" placeholder logo on SERPs instead of our actual mark.
+// be a raster format (PNG/JPG/GIF). The /logo.png file is rsvg-rendered
+// from /logo.svg (the bracket-and-creature brand mark) at 950×610, well
+// above Google's 112×112 minimum and high enough for downscaled display.
+// IMPORTANT: do NOT point at /favicon-512.png — that's the auto-generated
+// "om" square, identical to the placeholder Google falls back to when
+// it can't find a proper Organization.logo.
 //   https://developers.google.com/search/docs/appearance/structured-data/logo
-const ORG_LOGO = `${SITE_URL}/favicon-512.png`;
+const ORG_LOGO = `${SITE_URL}/logo.png`;
 
 /** Word count → reading minutes. ~225 wpm matches Medium's heuristic. */
 export function readingTimeMinutes(markdown: string): number {
