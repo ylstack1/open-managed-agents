@@ -28,12 +28,12 @@ export { D1SetupLinkRepo } from "./d1/setup-link-repo";
 export { D1DispatchRuleRepo } from "./d1/dispatch-rule-repo";
 export { D1TenantResolver } from "./d1/tenant-resolver";
 // Slack adapters — parallel to Linear's, separate slack_* tables.
-export { D1SlackAppRepo } from "./d1/slack/app-repo";
-export { D1SlackInstallationRepo } from "./d1/slack/installation-repo";
-export { D1SlackPublicationRepo } from "./d1/slack/publication-repo";
-export { D1SlackWebhookEventStore } from "./d1/slack/webhook-event-store";
-export { D1SlackSessionScopeRepo } from "./d1/slack/session-scope-repo";
-export { D1SlackSetupLinkRepo } from "./d1/slack/setup-link-repo";
+export { SqlSlackAppRepo } from "./d1/slack/app-repo";
+export { SqlSlackInstallationRepo } from "./d1/slack/installation-repo";
+export { SqlSlackPublicationRepo } from "./d1/slack/publication-repo";
+export { SqlSlackWebhookEventStore } from "./d1/slack/webhook-event-store";
+export { SqlSlackSessionScopeRepo } from "./d1/slack/session-scope-repo";
+export { SqlSlackSetupLinkRepo } from "./d1/slack/setup-link-repo";
 export { ServiceBindingSessionCreator } from "./service-binding-session-creator";
 export type { ServiceBindingSessionCreatorOptions } from "./service-binding-session-creator";
 export { ServiceBindingVaultManager } from "./service-binding-vault-manager";

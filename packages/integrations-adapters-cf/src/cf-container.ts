@@ -24,6 +24,7 @@
 //                      up user.tenantId. The better-auth tables never move.
 
 import type { Container } from "@open-managed-agents/integrations-core";
+import { drizzle } from "drizzle-orm/d1";
 import { SystemClock } from "./clock";
 import { WebCryptoAesGcm } from "./crypto";
 import { WebCryptoHmacVerifier } from "./hmac";
@@ -42,7 +43,7 @@ import { D1LinearIssueSessionRepo } from "./d1/linear/issue-session-repo";
 import { D1LinearEventStore } from "./d1/linear-event-store";
 import { D1PublicationRepo } from "./d1/publication-repo";
 import { D1SetupLinkRepo } from "./d1/setup-link-repo";
-import { D1SlackSessionScopeRepo } from "./d1/slack/session-scope-repo";
+import { SqlSlackSessionScopeRepo } from "./d1/slack/session-scope-repo";
 import { D1TenantResolver } from "./d1/tenant-resolver";
 import { ServiceBindingSessionCreator } from "./service-binding-session-creator";
 import { ServiceBindingVaultManager } from "./service-binding-vault-manager";
@@ -116,8 +117,9 @@ export function buildCfRepos(env: CfReposEnv) {
   const dispatchRules = new D1DispatchRuleRepo(idb, ids);
   // Slack-specific repo also satisfies the Container's `sessionScopes` slot —
   // Linear/GitHub never call into it (they use issueSessions instead). Still
-  // required by the Container interface.
-  const sessionScopes = new D1SlackSessionScopeRepo(idb);
+  // required by the Container interface. Drizzle-wrapped because the SQL
+  // adapter takes the OmaDb port, not a raw D1Database.
+  const sessionScopes = new SqlSlackSessionScopeRepo(drizzle(idb));
 
   return {
     clock,

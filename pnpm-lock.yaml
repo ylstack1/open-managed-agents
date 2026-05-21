@@ -1046,6 +1046,9 @@ importers:
 
   packages/integrations-adapters-cf:
     dependencies:
+      '@open-managed-agents/db-schema':
+        specifier: workspace:*
+        version: link:../db-schema
       '@open-managed-agents/github':
         specifier: workspace:*
         version: link:../github
@@ -1061,12 +1064,21 @@ importers:
       '@open-managed-agents/slack':
         specifier: workspace:*
         version: link:../slack
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@4.20260410.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@11.10.0)(kysely@0.28.16)(pg@8.20.0)(postgres@3.4.9)
 
   packages/integrations-adapters-node:
     dependencies:
+      '@open-managed-agents/db-schema':
+        specifier: workspace:*
+        version: link:../db-schema
       '@open-managed-agents/github':
         specifier: workspace:*
         version: link:../github
+      '@open-managed-agents/integrations-adapters-cf':
+        specifier: workspace:*
+        version: link:../integrations-adapters-cf
       '@open-managed-agents/integrations-core':
         specifier: workspace:*
         version: link:../integrations-core

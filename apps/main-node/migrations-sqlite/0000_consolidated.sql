@@ -110,8 +110,8 @@ CREATE INDEX `idx_session_resources_session_type` ON `session_resources` (`sessi
 CREATE TABLE `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`tenant_id` text NOT NULL,
-	`agent_id` text NOT NULL,
-	`environment_id` text NOT NULL,
+	`agent_id` text,
+	`environment_id` text,
 	`title` text DEFAULT '' NOT NULL,
 	`status` text NOT NULL,
 	`vault_ids` text,

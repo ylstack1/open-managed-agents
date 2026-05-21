@@ -174,6 +174,9 @@ if (usePostgres) {
   const { drizzle: drizzleBetterSqlite3 } = await import("drizzle-orm/better-sqlite3");
   const BetterSqlite3 = (await import("better-sqlite3")).default;
   const sqliteRaw = new BetterSqlite3(dbPath);
+  // Match D1's runtime default — FK enforcement off. See packages/sql-client
+  // for the rationale (publication-first install + a few other paths).
+  sqliteRaw.exec("PRAGMA foreign_keys = OFF");
   drizzleDb = drizzleBetterSqlite3(sqliteRaw) as unknown as OmaDb<Record<string, unknown>>;
   backendDescription = `sqlite ${dbPath}`;
 }
@@ -860,6 +863,7 @@ let installBridge: NodeInstallBridge | null = null;
 if (platformRootSecret) {
   installBridge = new NodeInstallBridge({
     sql,
+    db: drizzleDb,
     platformRootSecret,
     gatewayOrigin: gatewayOrigin.replace(/\/+$/, ""),
     vaults: vaultService,
@@ -887,6 +891,7 @@ if (platformRootSecret) {
 if (platformRootSecret) {
   const integrationsRepoEnv: NodeReposEnv = {
     sql,
+    db: drizzleDb,
     PLATFORM_ROOT_SECRET: platformRootSecret,
   };
   v1.route(
@@ -1026,6 +1031,7 @@ app.route("/v1/oma/evals", buildEvalRoutes({
 if (platformRootSecret) {
   const integrationsRepoEnvOma: NodeReposEnv = {
     sql,
+    db: drizzleDb,
     PLATFORM_ROOT_SECRET: platformRootSecret,
   };
   app.route(

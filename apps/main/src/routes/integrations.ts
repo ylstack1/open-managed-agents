@@ -13,11 +13,12 @@ import {
   D1GitHubAppRepo,
   D1GitHubInstallationRepo,
   D1GitHubPublicationRepo,
-  D1SlackAppRepo,
-  D1SlackInstallationRepo,
-  D1SlackPublicationRepo,
+  SqlSlackAppRepo,
+  SqlSlackInstallationRepo,
+  SqlSlackPublicationRepo,
   WebCryptoAesGcm,
 } from "@open-managed-agents/integrations-adapters-cf";
+import { drizzle } from "drizzle-orm/d1";
 import {
   buildIntegrationsRoutes,
   type IntegrationsBags,
@@ -41,9 +42,10 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
   });
   // Slack/GitHub need their parallel installations/publications/apps repos —
   // buildCfRepos exposes the github_* ones, but slack lives in slack_*
-  // tables and uses Slack-specific D1 repos.
+  // tables and uses Slack-specific SQL repos.
   const crypto = new WebCryptoAesGcm(k, "integrations.tokens");
   const ids = new CryptoIdGenerator();
+  const slackDb = drizzle(env.INTEGRATIONS_DB);
   return {
     linear: {
       installations: linearRepos.linearInstallations,
@@ -57,9 +59,9 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
       githubApps: new D1GitHubAppRepo(env.INTEGRATIONS_DB, crypto, ids),
     },
     slack: {
-      installations: new D1SlackInstallationRepo(env.INTEGRATIONS_DB, crypto, ids),
-      publications: new D1SlackPublicationRepo(env.INTEGRATIONS_DB, ids, crypto),
-      apps: new D1SlackAppRepo(env.INTEGRATIONS_DB, crypto, ids),
+      installations: new SqlSlackInstallationRepo(slackDb, crypto, ids),
+      publications: new SqlSlackPublicationRepo(slackDb, ids, crypto),
+      apps: new SqlSlackAppRepo(slackDb, crypto, ids),
     },
   };
 }

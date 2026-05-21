@@ -164,11 +164,25 @@ export async function atomicWrite<TSchema extends Record<string, unknown> = Reco
     return;
   }
 
-  // PG / better-sqlite3 path — wrap in a transaction, run each query
-  // sequentially. Each query is a Drizzle chain-builder; awaiting it
-  // executes against the current transaction context (drizzle re-binds
-  // the chain to the tx automatically).
+  // better-sqlite3 path — the native transaction() is sync (the driver
+  // refuses Promise-returning callbacks). Each Drizzle query has a sync
+  // `.run()` we can invoke under the transaction.
+  const driverName = (db as unknown as { constructor?: { name?: string } })
+    .constructor?.name;
   const txDb = db as unknown as PgTransaction;
+  if (driverName === "BetterSQLite3Database") {
+    txDb.transaction((() => {
+      for (const q of queries) {
+        const sync = q as unknown as { run?: () => unknown };
+        if (typeof sync.run === "function") sync.run();
+      }
+    }) as unknown as (tx: unknown) => Promise<void>);
+    return;
+  }
+
+  // PG / postgres-js path — wrap in a transaction, run each query
+  // sequentially. Each query is a Drizzle chain-builder; awaiting it
+  // executes against the current transaction context.
   if (typeof txDb.transaction === "function") {
     await txDb.transaction(async () => {
       for (const q of queries) {

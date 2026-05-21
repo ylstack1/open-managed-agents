@@ -5,8 +5,9 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { createBetterSqlite3SqlClient, type SqlClient } from "@open-managed-agents/sql-client";
 import BetterSqlite3 from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import type { OmaDb } from "@open-managed-agents/db-schema";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,13 +21,18 @@ import {
 
 describe("integrations-adapters-node smoke", () => {
   let sql: SqlClient;
+  let drz: BetterSQLite3Database;
   let tmpDir: string;
   beforeAll(async () => {
     // Drizzle migrate runs against an on-disk DB so the SqlClient opened
     // afterward observes the migrated schema (`:memory:` is per-connection).
     tmpDir = mkdtempSync(join(tmpdir(), "oma-int-smoke-"));
     const dbPath = join(tmpDir, "smoke.db");
-    const drz = drizzle(new BetterSqlite3(dbPath));
+    drz = (() => {
+      const raw = new BetterSqlite3(dbPath);
+      raw.exec("PRAGMA foreign_keys = OFF");
+      return drizzle(raw);
+    })();
     const migrationsFolder = fileURLToPath(
       new URL("../../../apps/main-node/migrations-sqlite", import.meta.url),
     );
@@ -51,12 +57,12 @@ describe("integrations-adapters-node smoke", () => {
   });
 
   it("resolves tenant via membership", async () => {
-    const repos = buildNodeRepos({ sql, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
+    const repos = buildNodeRepos({ sql, db: drz as unknown as OmaDb, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
     expect(await repos.tenants.resolveByUserId("usr_test")).toBe("tn_test");
   });
 
   it("inserts + reads a linear installation + publication round trip", async () => {
-    const repos = buildNodeRepos({ sql, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
+    const repos = buildNodeRepos({ sql, db: drz as unknown as OmaDb, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
     const inst = await repos.linearInstallations.insert({
       tenantId: "tn_test",
       userId: "usr_test",
@@ -93,7 +99,7 @@ describe("integrations-adapters-node smoke", () => {
   });
 
   it("HMAC verify recordIfNew dedupe (linear_events)", async () => {
-    const repos = buildNodeRepos({ sql, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
+    const repos = buildNodeRepos({ sql, db: drz as unknown as OmaDb, PLATFORM_ROOT_SECRET: "test-secret-32bytes-min-1234567890" });
     const ok = await repos.linearEvents.recordIfNew(
       "delivery_x1",
       "tn_test",
@@ -134,7 +140,7 @@ describe("integrations-adapters-node smoke", () => {
   it("Slack installation repo round trip uses slack_installations", async () => {
     const crypto = new WebCryptoAesGcm("test-secret-32bytes-min-1234567890");
     const ids = new CryptoIdGenerator();
-    const slackRepo = new SqlSlackInstallationRepo(sql, crypto, ids);
+    const slackRepo = new SqlSlackInstallationRepo(drz as unknown as OmaDb, crypto, ids);
     const inst = await slackRepo.insert({
       tenantId: "tn_test",
       userId: "usr_test",

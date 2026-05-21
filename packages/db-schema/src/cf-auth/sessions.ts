@@ -28,8 +28,12 @@ export const sessions = sqliteTable(
   {
     id: text("id").primaryKey().notNull(),
     tenant_id: text("tenant_id").notNull(),
-    agent_id: text("agent_id").notNull(),
-    environment_id: text("environment_id").notNull(),
+    // Nullable: orphan-session crash recovery legitimately writes rows
+    // without an active agent (the agent may have been deleted before
+    // the worker crashed mid-turn). Matches pre-Drizzle applySchema;
+    // tightening this would require a separate semantic decision.
+    agent_id: text("agent_id"),
+    environment_id: text("environment_id"),
     title: text("title").notNull().default(""),
     status: text("status").notNull(),
     // JSON blobs — plain TEXT, parsed in the adapter layer.

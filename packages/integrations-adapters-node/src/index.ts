@@ -31,12 +31,17 @@ export { SqlSetupLinkRepo } from "./sql/setup-link-repo";
 export { SqlDispatchRuleRepo } from "./sql/dispatch-rule-repo";
 export { SqlMembershipTenantResolver } from "./sql/membership-tenant-resolver";
 
-export { SqlSlackAppRepo } from "./sql/slack/app-repo";
-export { SqlSlackInstallationRepo } from "./sql/slack/installation-repo";
-export { SqlSlackPublicationRepo } from "./sql/slack/publication-repo";
-export { SqlSlackWebhookEventStore } from "./sql/slack/webhook-event-store";
-export { SqlSlackSessionScopeRepo } from "./sql/slack/session-scope-repo";
-export { SqlSlackSetupLinkRepo } from "./sql/slack/setup-link-repo";
+// Slack adapter classes are dialect-blind (Drizzle on top of OmaDb), so the
+// CF and Node packages share one canonical impl in -cf. Keep these as
+// re-exports rather than mirrors so the two packages can't drift again.
+export {
+  SqlSlackAppRepo,
+  SqlSlackInstallationRepo,
+  SqlSlackPublicationRepo,
+  SqlSlackWebhookEventStore,
+  SqlSlackSessionScopeRepo,
+  SqlSlackSetupLinkRepo,
+} from "@open-managed-agents/integrations-adapters-cf";
 
 export { buildNodeRepos, buildNodeContainer } from "./node-container";
 export type { NodeReposEnv, NodeContainerEnv } from "./node-container";

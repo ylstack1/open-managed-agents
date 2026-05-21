@@ -430,6 +430,9 @@ app.post("/sessions/:id/events", async (c) => {
 
   const session = await c.var.services.sessions.get({ tenantId, sessionId });
   if (!session) return c.json({ error: "session not found" }, 404);
+  if (!session.environment_id) {
+    return c.json({ error: "session has no environment_id" }, 400);
+  }
 
   const envRow2 = await c.var.services.environments.get({
     tenantId,

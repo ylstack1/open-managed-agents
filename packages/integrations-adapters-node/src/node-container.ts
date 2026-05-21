@@ -19,6 +19,7 @@
 // service-binding indirection.
 
 import type { SqlClient } from "@open-managed-agents/sql-client";
+import type { OmaDb } from "@open-managed-agents/db-schema";
 import type {
   Container,
   SessionCreator,
@@ -42,7 +43,7 @@ import { SqlGitHubIssueSessionRepo } from "./sql/github/issue-session-repo";
 import { SqlLinearEventStore } from "./sql/linear-event-store";
 import { SqlPublicationRepo } from "./sql/publication-repo";
 import { SqlSetupLinkRepo } from "./sql/setup-link-repo";
-import { SqlSlackSessionScopeRepo } from "./sql/slack/session-scope-repo";
+import { SqlSlackSessionScopeRepo } from "@open-managed-agents/integrations-adapters-cf";
 import { SqlMembershipTenantResolver } from "./sql/membership-tenant-resolver";
 
 export interface NodeReposEnv {
@@ -51,6 +52,10 @@ export interface NodeReposEnv {
    *  resolver reads. Self-host runs one database; we don't split
    *  integrations data into a separate connection. */
   sql: SqlClient;
+  /** Drizzle wrapper for the same database — the dialect-blind port that
+   *  ported adapters consume. As more adapters move from raw SqlClient
+   *  to Drizzle this widens; until then both surfaces coexist. */
+  db: OmaDb;
   PLATFORM_ROOT_SECRET: string;
 }
 
@@ -82,7 +87,7 @@ export function buildNodeRepos(env: NodeReposEnv) {
   const githubIssueSessions = new SqlGitHubIssueSessionRepo(sql);
   const setupLinks = new SqlSetupLinkRepo(sql, ids);
   const dispatchRules = new SqlDispatchRuleRepo(sql, ids);
-  const sessionScopes = new SqlSlackSessionScopeRepo(sql);
+  const sessionScopes = new SqlSlackSessionScopeRepo(env.db);
 
   return {
     clock,
