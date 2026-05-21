@@ -19,7 +19,7 @@
 
 import {
   buildCfContainer,
-  D1GitHubWebhookEventStore,
+  SqlGitHubWebhookEventStore,
   SqlSlackAppRepo,
   SqlSlackInstallationRepo,
   SqlSlackPublicationRepo,
@@ -87,7 +87,7 @@ export function buildGitHubContainer(env: Env): GitHubContainer {
     ...base,
     installations: base.githubInstallations,
     publications: base.githubPublications,
-    webhookEvents: new D1GitHubWebhookEventStore(env.INTEGRATIONS_DB),
+    webhookEvents: new SqlGitHubWebhookEventStore(drizzle(env.INTEGRATIONS_DB)),
     sessionScopes: new SqlSlackSessionScopeRepo(drizzle(env.INTEGRATIONS_DB)),
   };
 }

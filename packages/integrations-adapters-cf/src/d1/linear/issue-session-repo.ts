@@ -29,7 +29,7 @@ interface Row {
  * (two-phase claim against the AgentSessionEvent + AppUserNotification race).
  *
  * Backed by table `linear_issue_sessions`. GitHub has its own twin
- * (D1GitHubIssueSessionRepo / `github_issue_sessions`) — strictly separate.
+ * (SqlGitHubIssueSessionRepo / `github_issue_sessions`) — strictly separate.
  */
 export class D1LinearIssueSessionRepo implements LinearIssueSessionRepo {
   constructor(private readonly db: D1Database) {}

@@ -20,16 +20,22 @@ export { CryptoIdGenerator } from "./ids";
 export { SqlInstallationRepo } from "./sql/installation-repo";
 export { SqlPublicationRepo } from "./sql/publication-repo";
 export { SqlAppRepo } from "./sql/app-repo";
-export { SqlGitHubAppRepo } from "./sql/github-app-repo";
-export { SqlGitHubInstallationRepo } from "./sql/github/installation-repo";
-export { SqlGitHubPublicationRepo } from "./sql/github/publication-repo";
-export { SqlGitHubWebhookEventStore } from "./sql/github/webhook-event-store";
 export { SqlLinearEventStore } from "./sql/linear-event-store";
 export { SqlLinearIssueSessionRepo } from "./sql/linear/issue-session-repo";
-export { SqlGitHubIssueSessionRepo } from "./sql/github/issue-session-repo";
 export { SqlSetupLinkRepo } from "./sql/setup-link-repo";
 export { SqlDispatchRuleRepo } from "./sql/dispatch-rule-repo";
 export { SqlMembershipTenantResolver } from "./sql/membership-tenant-resolver";
+
+// GitHub adapter classes are dialect-blind (Drizzle on top of OmaDb), so the
+// CF and Node packages share one canonical impl in -cf. Keep these as
+// re-exports rather than mirrors so the two packages can't drift again.
+export {
+  SqlGitHubAppRepo,
+  SqlGitHubInstallationRepo,
+  SqlGitHubPublicationRepo,
+  SqlGitHubWebhookEventStore,
+  SqlGitHubIssueSessionRepo,
+} from "@open-managed-agents/integrations-adapters-cf";
 
 // Slack adapter classes are dialect-blind (Drizzle on top of OmaDb), so the
 // CF and Node packages share one canonical impl in -cf. Keep these as

@@ -10,9 +10,9 @@ import type { Env } from "@open-managed-agents/shared";
 import {
   buildCfRepos,
   CryptoIdGenerator,
-  D1GitHubAppRepo,
-  D1GitHubInstallationRepo,
-  D1GitHubPublicationRepo,
+  SqlGitHubAppRepo,
+  SqlGitHubInstallationRepo,
+  SqlGitHubPublicationRepo,
   SqlSlackAppRepo,
   SqlSlackInstallationRepo,
   SqlSlackPublicationRepo,
@@ -45,7 +45,7 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
   // tables and uses Slack-specific SQL repos.
   const crypto = new WebCryptoAesGcm(k, "integrations.tokens");
   const ids = new CryptoIdGenerator();
-  const slackDb = drizzle(env.INTEGRATIONS_DB);
+  const idb = drizzle(env.INTEGRATIONS_DB);
   return {
     linear: {
       installations: linearRepos.linearInstallations,
@@ -54,14 +54,14 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
       dispatchRules: linearRepos.dispatchRules,
     },
     github: {
-      installations: new D1GitHubInstallationRepo(env.INTEGRATIONS_DB, crypto, ids),
-      publications: new D1GitHubPublicationRepo(env.INTEGRATIONS_DB, ids, crypto),
-      githubApps: new D1GitHubAppRepo(env.INTEGRATIONS_DB, crypto, ids),
+      installations: new SqlGitHubInstallationRepo(idb, crypto, ids),
+      publications: new SqlGitHubPublicationRepo(idb, ids, crypto),
+      githubApps: new SqlGitHubAppRepo(idb, crypto, ids),
     },
     slack: {
-      installations: new SqlSlackInstallationRepo(slackDb, crypto, ids),
-      publications: new SqlSlackPublicationRepo(slackDb, ids, crypto),
-      apps: new SqlSlackAppRepo(slackDb, crypto, ids),
+      installations: new SqlSlackInstallationRepo(idb, crypto, ids),
+      publications: new SqlSlackPublicationRepo(idb, ids, crypto),
+      apps: new SqlSlackAppRepo(idb, crypto, ids),
     },
   };
 }
