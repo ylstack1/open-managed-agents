@@ -250,19 +250,17 @@ export async function applySchema(opts: ApplySchemaOptions): Promise<void> {
       CREATE INDEX IF NOT EXISTS "idx_files_session"
         ON "files" ("session_id");
 
-      CREATE TABLE IF NOT EXISTS "workspace_backups" (
-        "id"                TEXT PRIMARY KEY NOT NULL,
-        "tenant_id"         TEXT NOT NULL,
-        "session_id"        TEXT NOT NULL,
-        "blob_key"          TEXT NOT NULL,
-        "size_bytes"        BIGINT NOT NULL,
-        "created_at"        BIGINT NOT NULL,
-        "expires_at"        BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS "idx_workspace_backups_session"
-        ON "workspace_backups" ("session_id", "created_at" DESC);
-      CREATE INDEX IF NOT EXISTS "idx_workspace_backups_expires"
-        ON "workspace_backups" ("expires_at");
+      -- workspace_backups: owned by apps/main/migrations/0001_consolidated.sql
+      -- (D1) and apps/main-node/migrations/0001_consolidated.sql (PG, via
+      -- Drizzle). The shape here was the pre-0011 form (id=TEXT, session_id,
+      -- blob_key, size_bytes) and conflicts with the post-0011 production
+      -- shape (id=BIGSERIAL, source_session_id, environment_id,
+      -- backup_handle). Removed: the migration paths are canonical;
+      -- applySchema would crash CREATE INDEX on a renamed column.
+
+      -- model_cards: owned by the same consolidated migrations. Pre-0015
+      -- form (display_name) vs post-0015 (model) — removed for the same
+      -- canonical-migration reason as workspace_backups.
     `);
 
     await ensureEventLogSchema(sql, isPg ? "postgres" : "sqlite");
