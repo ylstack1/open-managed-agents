@@ -40,7 +40,7 @@ function otpEmailHtml(code: string, label: string): string {
 }
 
 export function createAuth(env: Env) {
-  const db = drizzle(env.AUTH_DB, { schema });
+  const db = drizzle(env.MAIN_DB, { schema });
 
   const socialProviders: Record<string, unknown> = {};
   if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) {
@@ -235,15 +235,15 @@ export async function hasMembership(
  *     sign-up predated this hook, or whose hook-time INSERT failed silently)
  *
  * Writes:
- *   - `tenant`     row in env.AUTH_DB (global control plane, not sharded)
+ *   - `tenant`     row in env.MAIN_DB (global control plane, not sharded)
  *   - `tenant_shard` row in env.ROUTER_DB (assigns this tenant to a shard
  *      via least-loaded placement)
- *   - `user.tenantId` UPDATE in env.AUTH_DB
- *   - `membership` row in env.AUTH_DB
+ *   - `user.tenantId` UPDATE in env.MAIN_DB
+ *   - `membership` row in env.MAIN_DB
  *
  * Shard assignment MUST land before the user's first authenticated request,
  * otherwise tenantDbMiddleware finds no tenant_shard row and falls back to
- * AUTH_DB defaultBinding. The fallback is then cached for the isolate's
+ * MAIN_DB defaultBinding. The fallback is then cached for the isolate's
  * lifetime — wrong-shard reads/writes follow until worker restart. Doing
  * the assign here (synchronously inside the signup path) closes that race.
  */
@@ -253,7 +253,7 @@ export async function ensureTenant(
   userName: string | null | undefined,
   userEmail: string | null | undefined,
 ): Promise<string> {
-  const db = env.AUTH_DB;
+  const db = env.MAIN_DB;
   const existing = await getTenantId(db, userId);
   if (existing) return existing;
 
@@ -279,8 +279,8 @@ export async function ensureTenant(
   // Single-D1 mode (auto-detected when AUTH_DB_01 binding isn't present):
   // there's only one D1 to assign to. Skip the shard_pool query — a fresh
   // self-host has no rows there yet — and write the tenant_shard row
-  // directly with the AUTH_DB binding name. ROUTER_DB falls back to
-  // AUTH_DB itself in this mode, so the row lives in the same DB as the
+  // directly with the MAIN_DB binding name. ROUTER_DB falls back to
+  // MAIN_DB itself in this mode, so the row lives in the same DB as the
   // tenant data — fine for single-D1 deployments.
   //
   // Multi-shard mode (openma.dev's --env production): pickShardForNewTenant
@@ -289,11 +289,11 @@ export async function ensureTenant(
   // so signup never blocks on shard-pool exhaustion.
   const envBag = env as unknown as Record<string, unknown>;
   const isSingleD1 = !envBag.AUTH_DB_01;
-  const controlPlaneDb = env.ROUTER_DB ?? env.AUTH_DB;
+  const controlPlaneDb = env.ROUTER_DB ?? env.MAIN_DB;
   const tenantShardDirectory = createCfTenantShardDirectoryService({ controlPlaneDb });
   let bindingName: string;
   if (isSingleD1) {
-    bindingName = "AUTH_DB";
+    bindingName = "MAIN_DB";
     await tenantShardDirectory.assign({ tenantId, bindingName });
   } else {
     const shardPool = createCfShardPoolService({ controlPlaneDb });

@@ -13,7 +13,7 @@
 //
 // DB routing:
 //   - integrationsDb : env.INTEGRATIONS_DB. Holds linear_*/github_*/slack_*.
-//   - controlPlaneDb : env.AUTH_DB. TenantResolver looks up user.tenantId here.
+//   - controlPlaneDb : env.MAIN_DB. TenantResolver looks up user.tenantId here.
 // Tenant sharding (per-tenant DB) doesn't apply to integration tables — the
 // webhook entry can't resolve tenant before signature verify.
 
@@ -36,7 +36,7 @@ import type { Env } from "./env";
 function cfEnvOf(env: Env): CfContainerEnv {
   return {
     integrationsDb: env.INTEGRATIONS_DB,
-    controlPlaneDb: env.AUTH_DB,
+    controlPlaneDb: env.MAIN_DB,
     PLATFORM_ROOT_SECRET: env.PLATFORM_ROOT_SECRET,
     MAIN: env.MAIN,
     INTEGRATIONS_INTERNAL_SECRET: env.INTEGRATIONS_INTERNAL_SECRET,

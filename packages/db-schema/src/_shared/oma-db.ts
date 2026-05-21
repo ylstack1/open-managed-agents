@@ -10,7 +10,7 @@
 //
 //   COMPOSITION ROOT (apps/main, apps/main-node, apps/agent, packages/services)
 //   constructs the matching Drizzle client and passes it through this port:
-//     CF D1:           drizzle(env.AUTH_DB, { schema })
+//     CF D1:           drizzle(env.MAIN_DB, { schema })
 //     Node-PG:         drizzle(postgresClient, { schema })
 //     Node-SQLite:     drizzle(betterSqlite3Db, { schema })
 //

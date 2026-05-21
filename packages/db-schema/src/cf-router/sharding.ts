@@ -8,8 +8,8 @@
 // (the squashed baseline; pre-squash sources are in _archive/).
 //
 // Single-D1 self-host deployments do NOT bind ROUTER_DB at all —
-// env.ROUTER_DB falls back to env.AUTH_DB and these tables sit
-// (harmlessly) inside the AUTH_DB file. Drift CI still validates
+// env.ROUTER_DB falls back to env.MAIN_DB and these tables sit
+// (harmlessly) inside the MAIN_DB file. Drift CI still validates
 // the schema regardless.
 
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -52,7 +52,7 @@ export const shard_pool = sqliteTable(
 // when a memory store is created (apps/main/src/routes/memory.ts POST
 // /v1/memory). The R2 → MEMORY_EVENTS_QUEUE consumer queries this
 // once per event to find the owning tenant when only the bucket key
-// is known. Co-located with tenant_shard (not in AUTH_DB) so the
+// is known. Co-located with tenant_shard (not in MAIN_DB) so the
 // memory queue keeps routing for tenants on shards 1-3 even when
 // shard 0 is down.
 export const memory_store_tenant = sqliteTable(

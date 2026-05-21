@@ -1,5 +1,5 @@
 // Adapter wiring for the control-plane shard router store. All reads and
-// writes target the control-plane DB (env.AUTH_DB on CF, the shared
+// writes target the control-plane DB (env.MAIN_DB on CF, the shared
 // Drizzle DB on the self-host build).
 
 export { SqlTenantShardDirectoryRepo } from "./sql-tenant-shard-repo";

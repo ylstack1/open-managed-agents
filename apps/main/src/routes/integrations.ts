@@ -36,7 +36,7 @@ function bagsFor(c: import("hono").Context<{ Bindings: Env } & Vars>): Integrati
   }
   const linearRepos = buildCfRepos({
     integrationsDb: env.INTEGRATIONS_DB,
-    controlPlaneDb: env.AUTH_DB,
+    controlPlaneDb: env.MAIN_DB,
     PLATFORM_ROOT_SECRET: k,
   });
   // Slack/GitHub need their parallel installations/publications/apps repos —

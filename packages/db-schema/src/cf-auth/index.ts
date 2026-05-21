@@ -1,4 +1,4 @@
-// CF AUTH_DB schema (SQLite / D1).
+// CF MAIN_DB schema (SQLite / D1).
 //
 // Holds: tenant, membership, user, session, account, verification,
 // agents, agent_versions, sessions, session_resources,

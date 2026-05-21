@@ -75,7 +75,7 @@ export const session_resources = sqliteTable(
   ],
 );
 
-// Live in CF AUTH_DB via the inline applySchema() path (no _archive
+// Live in CF MAIN_DB via the inline applySchema() path (no _archive
 // migration). Listed in the cf-auth barrel comment, so we match.
 export const session_memory_stores = sqliteTable(
   "session_memory_stores",

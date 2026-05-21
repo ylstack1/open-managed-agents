@@ -18,9 +18,9 @@
 // DB routing:
 //   - integrationsDb : the per-subsystem D1 holding linear_*/github_*/slack_*
 //                      tables. Lives in env.INTEGRATIONS_DB. Replaces the
-//                      previous shared AUTH_DB, isolating webhook write
+//                      previous shared MAIN_DB, isolating webhook write
 //                      traffic from the auth/sessions/agents control-plane.
-//   - controlPlaneDb : env.AUTH_DB. Used ONLY by the TenantResolver to look
+//   - controlPlaneDb : env.MAIN_DB. Used ONLY by the TenantResolver to look
 //                      up user.tenantId. The better-auth tables never move.
 
 import type { Container } from "@open-managed-agents/integrations-core";
@@ -50,12 +50,12 @@ import { ServiceBindingVaultManager } from "./service-binding-vault-manager";
 /** Env subset needed by buildCfRepos. */
 export interface CfReposEnv {
   /** Integration subsystem D1 — holds linear_* / github_* / slack_* tables.
-   *  Separate database from AUTH_DB to isolate write traffic and let
+   *  Separate database from MAIN_DB to isolate write traffic and let
    *  schema evolve independently. All integration repos in this package
    *  read/write here. */
   integrationsDb: D1Database;
   /** Control-plane DB for cross-tenant lookups (TenantResolver).
-   *  Always env.AUTH_DB — the better-auth user table never moves. */
+   *  Always env.MAIN_DB — the better-auth user table never moves. */
   controlPlaneDb: D1Database;
   PLATFORM_ROOT_SECRET: string;
 }

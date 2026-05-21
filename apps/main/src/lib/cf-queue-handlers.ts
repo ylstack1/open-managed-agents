@@ -62,12 +62,12 @@ export function buildCfMemoryQueue(env: Env, bindings: CfQueueBindings = {}): {
     if (!env.MEMORY_BUCKET) {
       throw new Error("MEMORY_BUCKET binding missing");
     }
-    if (!env.AUTH_DB) {
-      throw new Error("AUTH_DB binding missing");
+    if (!env.MAIN_DB) {
+      throw new Error("MAIN_DB binding missing");
     }
     const blobs = new CfR2BlobStore(env.MEMORY_BUCKET);
     const tenantIndex = createCfMemoryStoreTenantIndexService({
-      controlPlaneDb: env.ROUTER_DB ?? env.AUTH_DB,
+      controlPlaneDb: env.ROUTER_DB ?? env.MAIN_DB,
     });
     const resolveRepo = async (storeId: string): Promise<SqlMemoryRepo> => {
       const cached = repoCache.get(storeId);
@@ -78,11 +78,11 @@ export function buildCfMemoryQueue(env: Env, bindings: CfQueueBindings = {}): {
       } catch (err) {
         log(
           { op: "queue.memory_events.lookup_failed", store_id: storeId, err },
-          "memory_store_tenant lookup failed; falling back to AUTH_DB",
+          "memory_store_tenant lookup failed; falling back to MAIN_DB",
         );
       }
       if (!tenantId) {
-        const fallback = new SqlMemoryRepo(drizzle(env.AUTH_DB));
+        const fallback = new SqlMemoryRepo(drizzle(env.MAIN_DB));
         repoCache.set(storeId, fallback);
         return fallback;
       }
@@ -180,7 +180,7 @@ export async function dispatchCfMemoryQueueBatch(
     return;
   }
   // Main queue: ack on success, retry on throw — handled by dispatchCfBatch.
-  // Pre-flight check on bindings: if MEMORY_BUCKET / AUTH_DB are missing
+  // Pre-flight check on bindings: if MEMORY_BUCKET / MAIN_DB are missing
   // we want every message to retry (next deploy with bindings present),
   // matching the pre-extract behaviour.
   if (!env_has_required(batch, q)) return;

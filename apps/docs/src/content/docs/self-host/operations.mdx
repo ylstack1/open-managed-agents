@@ -75,7 +75,7 @@ See `packages/storage/README.md` for the full config schema. This is independent
 
 ### Multi-shard scaling
 
-If your deployment outgrows a single D1 (D1 has a 10 GB / 50K-row limits per database), you can fan out across N AUTH_DB shards. The shard router lives in `ROUTER_DB`; per-tenant data lands on whichever shard `tenant_shard` says owns the tenant.
+If your deployment outgrows a single D1 (D1 has a 10 GB / 50K-row limits per database), you can fan out across N MAIN_DB shards. The shard router lives in `ROUTER_DB`; per-tenant data lands on whichever shard `tenant_shard` says owns the tenant.
 
 Activation is config-only — the wrangler files ship with `env.production` overlays that bind 4 sharded auth DBs (used by openma.dev's hosted prod). To enable for your own deployment:
 

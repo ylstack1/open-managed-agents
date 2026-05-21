@@ -105,7 +105,7 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // Lazy import to avoid crashing workerd in test environments
 app.use("/auth/*", authRateLimitMiddleware);
 app.on(["GET", "POST"], "/auth/*", async (c) => {
-  if (!c.env.AUTH_DB) return c.json({ error: "Auth not configured" }, 503);
+  if (!c.env.MAIN_DB) return c.json({ error: "Auth not configured" }, 503);
   const { createAuth } = await import("./auth-config");
   return createAuth(c.env).handler(c.req.raw);
 });
@@ -127,7 +127,7 @@ app.get("/auth-info", (c) => {
 app.use("/v1/*", authMiddleware);
 app.use("/v1/*", rateLimitMiddleware);
 // Resolve the per-tenant D1 database for this request. Phase 1: returns the
-// shared AUTH_DB for every tenant (zero behaviour change). Phase 4: routes
+// shared MAIN_DB for every tenant (zero behaviour change). Phase 4: routes
 // to per-tenant bindings published by the CICD sync script.
 app.use("/v1/*", tenantDbMiddleware);
 // Build the platform-agnostic service container once per request and stash it
@@ -139,7 +139,7 @@ app.use("/v1/*", servicesMiddleware);
 // `@open-managed-agents/http-routes`. Per-request `RouteServices` is
 // resolved off `c.var.services` so the per-tenant D1 binding flows
 // through; CF-only callbacks (model card validation, field-size limits,
-// shard assignment, KV-backed api-key storage, AUTH_DB membership reads)
+// shard assignment, KV-backed api-key storage, MAIN_DB membership reads)
 // get plumbed in here. Each mount is a Hono sub-app whose handler builds
 // a one-shot package app per request — cheap (~µs of route registration)
 // and keeps the per-tenant + per-request callbacks correctly scoped
@@ -149,7 +149,7 @@ app.use("/v1/*", servicesMiddleware);
 // `@open-managed-agents/http-routes`. Per-request `RouteServices` is
 // resolved off `c.var.services` so the per-tenant D1 binding flows
 // through; CF-only callbacks (model card validation, field-size limits,
-// shard assignment, KV-backed api-key storage, AUTH_DB membership reads,
+// shard assignment, KV-backed api-key storage, MAIN_DB membership reads,
 // USAGE_METER + refresh + GitHub fast-path lifecycle hooks) get plumbed
 // in via closures over `c` so they always see the per-request services
 // container without leaking globals.
@@ -226,23 +226,23 @@ const meRoutes = new Hono<{
     services: () => cfRouteServicesFromCtx(ctx),
     authDisabled: false,
     loadUser: async (userId) => {
-      if (!env.AUTH_DB) return null;
-      const r = await env.AUTH_DB
+      if (!env.MAIN_DB) return null;
+      const r = await env.MAIN_DB
         .prepare(`SELECT id, email, name FROM "user" WHERE id = ?`)
         .bind(userId)
         .first<{ id: string; email: string; name: string | null }>();
       return r ?? null;
     },
     loadTenant: async (tenantId) => {
-      if (!env.AUTH_DB) return null;
-      const r = await env.AUTH_DB
+      if (!env.MAIN_DB) return null;
+      const r = await env.MAIN_DB
         .prepare(`SELECT id, name FROM tenant WHERE id = ?`)
         .bind(tenantId)
         .first<{ id: string; name: string }>();
       return r ?? null;
     },
-    listMemberships: (userId) => listMemberships(env.AUTH_DB, userId),
-    hasMembership: (userId, tenantId) => hasMembership(env.AUTH_DB, userId, tenantId),
+    listMemberships: (userId) => listMemberships(env.MAIN_DB, userId),
+    hasMembership: (userId, tenantId) => hasMembership(env.MAIN_DB, userId, tenantId),
     mintApiKey: (input) =>
       mintApiKeyOnStorage(cfApiKeyStorage(services.kv), input),
   });
@@ -259,11 +259,11 @@ const tenantsRoutes = new Hono<{
     services: () => cfRouteServicesFromCtx(ctx),
     createTenantAndMembership: async ({ tenantId, name, userId }) => {
       const now = Math.floor(Date.now() / 1000);
-      await env.AUTH_DB.batch([
-        env.AUTH_DB
+      await env.MAIN_DB.batch([
+        env.MAIN_DB
           .prepare("INSERT INTO tenant (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)")
           .bind(tenantId, name, now, now),
-        env.AUTH_DB
+        env.MAIN_DB
           .prepare(
             "INSERT INTO membership (user_id, tenant_id, role, created_at) VALUES (?, ?, 'owner', ?)",
           )
@@ -271,7 +271,7 @@ const tenantsRoutes = new Hono<{
       ]);
     },
     assignShard: async (tenantId) => {
-      const controlPlaneDb = env.ROUTER_DB ?? env.AUTH_DB;
+      const controlPlaneDb = env.ROUTER_DB ?? env.MAIN_DB;
       const shardPool = createCfShardPoolService({ controlPlaneDb });
       const tenantShardDirectory = createCfTenantShardDirectoryService({ controlPlaneDb });
       const pick = await shardPool.pickShardForNewTenant();

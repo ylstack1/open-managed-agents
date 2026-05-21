@@ -2,7 +2,7 @@
 //
 // Both ship via the inline applySchema() in packages/schema/src/index.ts —
 // CF historically stored these in CONFIG_KV / D1 KV instead of D1 rows.
-// They land in AUTH_DB on the SQL path so single-D1 self-host has one
+// They land in MAIN_DB on the SQL path so single-D1 self-host has one
 // home for everything.
 //
 // Tables:

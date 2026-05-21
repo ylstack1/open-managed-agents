@@ -7,10 +7,10 @@
 export interface Env {
   // Control-plane DB — user / tenant / vault / session metadata. Shared
   // with apps/main.
-  AUTH_DB: D1Database;
+  MAIN_DB: D1Database;
 
   // Integration subsystem DB — linear_* / github_* / slack_* tables.
-  // Separate D1 database from AUTH_DB. Schema in
+  // Separate D1 database from MAIN_DB. Schema in
   // apps/main/migrations-integrations/.
   INTEGRATIONS_DB: D1Database;
 

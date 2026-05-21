@@ -6,7 +6,7 @@
 // database).
 //
 // Subpackages — each maps to one drizzle-kit config + one migrations dir:
-//   ./cf-auth          → AUTH_DB / openma-auth (control plane + business)
+//   ./cf-auth          → MAIN_DB / openma-auth (control plane + business)
 //   ./cf-integrations  → INTEGRATIONS_DB / openma-integrations
 //   ./cf-router        → ROUTER_DB / openma-router
 //   ./node-pg          → single PG database (union of the three above)
