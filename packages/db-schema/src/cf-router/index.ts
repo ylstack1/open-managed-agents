@@ -7,6 +7,5 @@
 //
 // drizzle-kit consumes this barrel via drizzle.cf-router.config.ts and
 // emits migrations into apps/main/migrations-router/.
-//
-// Tables populated in Phase 2; empty for now.
-export {};
+
+export * from "./sharding";

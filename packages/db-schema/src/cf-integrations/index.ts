@@ -10,6 +10,7 @@
 //
 // drizzle-kit consumes this barrel via drizzle.cf-integrations.config.ts
 // and emits migrations into apps/main/migrations-integrations/.
-//
-// Tables populated in Phase 2; empty for now.
-export {};
+
+export * from "./linear";
+export * from "./github";
+export * from "./slack";

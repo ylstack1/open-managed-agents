@@ -6,8 +6,21 @@
 // is the union of what CF splits across 3 D1 bindings.
 //
 // drizzle-kit consumes this barrel via drizzle.node-pg.config.ts and
-// emits migrations into apps/main-node/migrations/ (Phase 3 will add
-// that directory back — currently exists on rl-logprobs branch only).
-//
-// Tables populated in Phase 2; empty for now.
-export {};
+// emits migrations into apps/main-node/migrations/.
+
+export * from "./cf-auth-auth";
+export * from "./cf-auth-agents";
+export * from "./cf-auth-sessions";
+export * from "./cf-auth-memory";
+export * from "./cf-auth-vaults";
+export * from "./cf-auth-model-cards";
+export * from "./cf-auth-environments";
+export * from "./cf-auth-files";
+export * from "./cf-auth-runtimes";
+export * from "./cf-auth-evals";
+export * from "./cf-auth-usage";
+export * from "./cf-auth-kv";
+export * from "./cf-router-sharding";
+export * from "./cf-integrations-linear";
+export * from "./cf-integrations-github";
+export * from "./cf-integrations-slack";
