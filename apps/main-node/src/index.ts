@@ -158,14 +158,28 @@ const dialect = usePostgres ? "postgres" : "sqlite";
 
 let sql: SqlClient;
 let backendDescription: string;
+// drizzleDb is the dependency-inversion seam new-style adapters take.
+// Constructed once at the composition root from the right concrete driver.
+// Existing SqlClient is still built alongside for the legacy applySchema /
+// integrations adapters until those finish migrating.
+import type { OmaDb } from "@open-managed-agents/db-schema";
+let drizzleDb: OmaDb<Record<string, unknown>>;
 if (usePostgres) {
   sql = await createPostgresSqlClient(dbUrl);
+  const { drizzle: drizzlePostgresJs } = await import("drizzle-orm/postgres-js");
+  const postgresMod = (await import("postgres" as string)) as { default: (dsn: string) => unknown };
+  const pgClient = postgresMod.default(dbUrl);
+  drizzleDb = drizzlePostgresJs(pgClient as never) as unknown as OmaDb<Record<string, unknown>>;
   const u = new URL(dbUrl);
   backendDescription = `postgres ${u.hostname}:${u.port || 5432}${u.pathname}`;
 } else {
   const dbPath = process.env.DATABASE_PATH ?? "./data/oma.db";
   mkdirSync(dirname(dbPath), { recursive: true });
   sql = await createBetterSqlite3SqlClient(dbPath);
+  const { drizzle: drizzleBetterSqlite3 } = await import("drizzle-orm/better-sqlite3");
+  const BetterSqlite3 = (await import("better-sqlite3")).default;
+  const sqliteRaw = new BetterSqlite3(dbPath);
+  drizzleDb = drizzleBetterSqlite3(sqliteRaw) as unknown as OmaDb<Record<string, unknown>>;
   backendDescription = `sqlite ${dbPath}`;
 }
 
@@ -236,13 +250,13 @@ if (!authDisabled) {
 
 // ─── Stores ─────────────────────────────────────────────────────────────
 
-const agentsService = createSqliteAgentService({ client: sql });
-const vaultService = createSqliteVaultService({ client: sql });
-const credentialService = createSqliteCredentialService({ client: sql });
-const sessionsService = createSqliteSessionService({ client: sql });
-const filesService = createSqliteFileService({ client: sql });
-const evalsService = createSqliteEvalRunService({ client: sql });
-const environmentsService = createSqliteEnvironmentService({ client: sql });
+const agentsService = createSqliteAgentService({ db: drizzleDb });
+const vaultService = createSqliteVaultService({ db: drizzleDb });
+const credentialService = createSqliteCredentialService({ db: drizzleDb });
+const sessionsService = createSqliteSessionService({ db: drizzleDb });
+const filesService = createSqliteFileService({ db: drizzleDb });
+const evalsService = createSqliteEvalRunService({ db: drizzleDb });
+const environmentsService = createSqliteEnvironmentService({ db: drizzleDb });
 
 let memoryBlobs: import("@open-managed-agents/memory-store").BlobStore;
 let memoryBlobDescription: string;
@@ -286,10 +300,10 @@ if (
 }
 
 const memoryService = createSqliteMemoryStoreService({
-  client: sql,
+  db: drizzleDb,
   blobs: memoryBlobs,
 });
-const memoryRepo = new SqlMemoryRepo(sql);
+const memoryRepo = new SqlMemoryRepo(drizzleDb);
 // Memory blob watcher — wires chokidar fs events through
 // packages/queue's processMemoryEvent so CF + Node share one upsert
 // code path. PG mode uses the multi-replica-safe PG queue table; SQLite
@@ -490,7 +504,7 @@ await sessionRegistry.bootstrap();
 
 // ─── Services bundle ────────────────────────────────────────────────────
 
-const kv = new SqlKvStore({ sql, tenantId: "default" });
+const kv = new SqlKvStore({ db: drizzleDb, tenantId: "default" });
 
 const services: RouteServices = {
   sql,

@@ -389,7 +389,7 @@ export class SqlSessionRepo implements SessionRepo {
   }
 }
 
-function resourceInsertQuery(db: Db, r: NewSessionResourceInput) {
+function resourceInsertQuery(db: OmaDbBuilder, r: NewSessionResourceInput) {
   return db.insert(session_resources).values({
     id: r.id,
     session_id: r.sessionId,

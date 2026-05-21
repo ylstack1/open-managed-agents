@@ -530,6 +530,9 @@ importers:
       '@open-managed-agents/credentials-store':
         specifier: workspace:*
         version: link:../../packages/credentials-store
+      '@open-managed-agents/db-schema':
+        specifier: workspace:*
+        version: link:../../packages/db-schema
       '@open-managed-agents/email':
         specifier: workspace:*
         version: link:../../packages/email

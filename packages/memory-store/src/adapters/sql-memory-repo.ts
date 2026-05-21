@@ -218,7 +218,7 @@ export class SqlMemoryRepo implements MemoryRepo {
   }
 }
 
-function versionInsertQuery(db: Db, v: NewMemoryVersionInput) {
+function versionInsertQuery(db: OmaDbBuilder, v: NewMemoryVersionInput) {
   return db.insert(memory_versions).values({
     id: v.id,
     memory_id: v.memoryId,
@@ -237,4 +237,17 @@ function versionInsertQuery(db: Db, v: NewMemoryVersionInput) {
 
 function msToIso(ms: number): string {
   return new Date(ms).toISOString();
+}
+
+function toRow(r: typeof memories.$inferSelect): MemoryRow {
+  return {
+    id: r.id,
+    store_id: r.store_id,
+    path: r.path,
+    content_sha256: r.content_sha256,
+    etag: r.etag ?? "",
+    size_bytes: r.size_bytes,
+    created_at: msToIso(r.created_at),
+    updated_at: msToIso(r.updated_at),
+  };
 }

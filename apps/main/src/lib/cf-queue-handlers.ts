@@ -19,7 +19,7 @@ import {
   SqlMemoryRepo,
   type Actor,
 } from "@open-managed-agents/memory-store";
-import { CfD1SqlClient } from "@open-managed-agents/sql-client/adapters/cf-d1";
+import { drizzle } from "drizzle-orm/d1";
 import { buildCfTenantDbProvider } from "@open-managed-agents/services";
 import { createCfMemoryStoreTenantIndexService } from "@open-managed-agents/tenant-dbs-store";
 import {
@@ -82,12 +82,12 @@ export function buildCfMemoryQueue(env: Env, bindings: CfQueueBindings = {}): {
         );
       }
       if (!tenantId) {
-        const fallback = new SqlMemoryRepo(new CfD1SqlClient(env.AUTH_DB));
+        const fallback = new SqlMemoryRepo(drizzle(env.AUTH_DB));
         repoCache.set(storeId, fallback);
         return fallback;
       }
       const db = await provider.resolve(tenantId);
-      const repo = new SqlMemoryRepo(new CfD1SqlClient(db));
+      const repo = new SqlMemoryRepo(drizzle(db));
       repoCache.set(storeId, repo);
       return repo;
     };

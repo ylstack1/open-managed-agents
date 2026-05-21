@@ -42,20 +42,6 @@ async function withPgRaceRetry(
   }
 }
 
-async function addColumnIfMissing(
-  sql: SqlClient,
-  table: string,
-  column: string,
-  type: string,
-): Promise<void> {
-  try {
-    await sql.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
-  } catch (err) {
-    const msg = (err as Error).message ?? "";
-    if (!/duplicate column name|already exists/i.test(msg)) throw err;
-  }
-}
-
 export async function applySchema(opts: ApplySchemaOptions): Promise<void> {
   const { sql, dialect, includeBetterAuth = false } = opts;
   const isPg = dialect === "postgres";
@@ -265,40 +251,6 @@ export async function applySchema(opts: ApplySchemaOptions): Promise<void> {
 
     await ensureEventLogSchema(sql, isPg ? "postgres" : "sqlite");
   }, isPg);
-
-  // In-place migrations for upgrades — old rows may pre-date later columns.
-  await addColumnIfMissing(sql, "sessions", "turn_id", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "turn_started_at", "BIGINT");
-  await addColumnIfMissing(sql, "sessions", "environment_id", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "vault_ids", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "agent_snapshot", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "environment_snapshot", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "metadata", "TEXT");
-  await addColumnIfMissing(sql, "sessions", "archived_at", "BIGINT");
-  await addColumnIfMissing(sql, "sessions", "terminated_at", "BIGINT");
-
-  // Publication-first install (apps/main/migrations-integrations/0002):
-  // Publication-first install (apps/main/migrations-integrations/0002+):
-  // staging columns on slack_publications. All NULLABLE; existing live
-  // publications (status='live', installation_id NOT NULL) keep working.
-  await addColumnIfMissing(sql, "slack_publications", "client_id", "TEXT");
-  await addColumnIfMissing(sql, "slack_publications", "client_secret_cipher", "TEXT");
-  await addColumnIfMissing(sql, "slack_publications", "signing_secret_cipher", "TEXT");
-  await addColumnIfMissing(sql, "slack_publications", "slack_app_id", "TEXT");
-  // Same publication-first staging columns on github_publications.
-  await addColumnIfMissing(sql, "github_publications", "app_oma_id", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "client_id", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "client_secret_cipher", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "app_id", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "app_slug", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "bot_login", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "webhook_secret_cipher", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "private_key_cipher", "TEXT");
-  await addColumnIfMissing(sql, "github_publications", "vault_id", "TEXT");
-  // Trigger label for the label-based bot engagement path. Default = lower
-  // case persona_name. Users can edit it post-publish; provider auto-creates
-  // the label in installed repos.
-  await addColumnIfMissing(sql, "github_publications", "trigger_label", "TEXT");
 
   if (includeBetterAuth) {
     await applyBetterAuthSchema({ sql, dialect });

@@ -36,7 +36,7 @@ import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
  * three concrete Drizzle clients (D1 / better-sqlite3 / postgres-js)
  * are all valid here.
  */
-export type OmaDb<TSchema extends Record<string, unknown> = Record<string, never>> =
+export type OmaDb<TSchema extends Record<string, unknown> = Record<string, unknown>> =
   | DrizzleD1Database<TSchema>
   | BetterSQLite3Database<TSchema>
   | PostgresJsDatabase<TSchema>;
@@ -72,7 +72,9 @@ export type OmaDbBuilder = BetterSQLite3Database<Record<string, never>>;
  * not in adapter code. Adapter signature stays `db: OmaDb`; field
  * type becomes `OmaDbBuilder` after passing through this helper.
  */
-export function asBuilder(db: OmaDb): OmaDbBuilder {
+export function asBuilder<TSchema extends Record<string, unknown> = Record<string, unknown>>(
+  db: OmaDb<TSchema>,
+): OmaDbBuilder {
   // Runtime: every dialect's drizzle() returns an object with the
   // same chain-builder methods. The type-level cast here is documented
   // as the single point where dialect type narrowing happens.
@@ -149,7 +151,10 @@ interface PgTransaction {
  *
  * No dialect awareness in adapter code.
  */
-export async function atomicWrite(db: OmaDb, queries: unknown[]): Promise<void> {
+export async function atomicWrite<TSchema extends Record<string, unknown> = Record<string, unknown>>(
+  db: OmaDb<TSchema>,
+  queries: unknown[],
+): Promise<void> {
   // D1 path — drizzle's D1 wrapper exposes `batch` taking a list of
   // SQLite chain-builders directly.
   const maybeBatch = db as unknown as Partial<D1Batch>;
