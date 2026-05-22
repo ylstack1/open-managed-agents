@@ -188,12 +188,11 @@ export function ListPage<T>({
     </>
   ) : undefined;
 
-  // Table head sticks directly below the PageHeader. PageHeader publishes
-  // its measured height to `--page-header-height` on documentElement via
-  // a ResizeObserver, so this offset stays correct when the toolbar row
-  // appears/disappears or the viewport reflows. Fallback to 0px if the
-  // var isn't set (table mounted before a PageHeader for some reason).
-  const tableHeadSticky = "sticky top-[var(--page-header-height,0px)] z-10";
+  // Table head pins to the top of <main> (the scroll container in
+  // AppShell). PageHeader is rendered via portal into a sibling slot
+  // ABOVE <main>, so `top-0` here puts the head flush below the header
+  // with no CSS-var coordination needed.
+  const tableHeadSticky = "sticky top-0 z-10";
 
   return (
     <Page header={<PageHeader title={title} subtitle={subtitle} actions={actions} toolbar={toolbar} />}>

@@ -1,8 +1,17 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Outlet, Navigate, useNavigate } from "react-router";
 
 import {
-  SidebarInset,
+  Sidebar as ShadcnSidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
@@ -18,31 +27,55 @@ import { CommandPalette } from "./CommandPalette";
 import { NavigationProgress } from "./NavigationProgress";
 import { Logo } from "./Logo";
 
+void ShadcnSidebar;
+void SidebarContent;
+void SidebarFooter;
+void SidebarGroup;
+void SidebarGroupContent;
+void SidebarGroupLabel;
+void SidebarHeader;
+void SidebarMenu;
+void SidebarMenuButton;
+void SidebarMenuItem;
+
 /**
- * Application shell. Wraps every authenticated route in shadcn's
- * `SidebarProvider` + custom `AppSidebar` + `SidebarInset`. Inside the
- * inset, page content scrolls; sticky `PageHeader` rendered by each page
- * pins to the top of the scroll area.
+ * AppShell — single-rounded-panel layout, modeled on the benchmark.
  *
- * Replaces the previous hand-rolled Layout (570L) — collapse / mobile
- * drawer / sidebar resize / keyboard shortcuts all delegate to shadcn's
- * primitives. The bits that stayed:
- *   - Linear-style chord keybindings (g+letter routes) driven by
- *     ROUTE_CHORDS (lifted to `lib/route-chords.ts`).
- *   - The autofill honeypot pair at the top of the authenticated DOM —
- *     stops Chrome/Safari from filling login credentials into the first
- *     real form input on the page.
- *   - NavigationProgress / CommandPalette mounted once at the top.
+ *   ┌────────────────────────────────────────────────────────┐
+ *   │ stage (continuous bg behind everything)                │
+ *   │ ┌─────┬────────────────────────────────────────────┐   │
+ *   │ │     │ [trigger]  (top toolbar on stage, no chrome)│   │
+ *   │ │ side│ ┌──────────────────────────────────────────┐│   │
+ *   │ │ bar │ │ pageHeaderSlot  (rounded panel top)      ││   │
+ *   │ │     │ ├──────────────────────────────────────────┤│   │
+ *   │ │     │ │ main (overflow-y-auto, content scrolls)  ││   │
+ *   │ │     │ └──────────────────────────────────────────┘│   │
+ *   │ └─────┴────────────────────────────────────────────┘   │
+ *   └────────────────────────────────────────────────────────┘
+ *
+ * The rounded panel only rounds its TOP-LEFT corner (flush against the
+ * right + bottom viewport edges). PageHeader uses React portal to render
+ * INTO `pageHeaderSlot`, which sits ABOVE the scroll container as a
+ * `shrink-0` sibling — so the header literally cannot scroll (no sticky
+ * positioning required) and table heads inside `main` can just use
+ * `top-0` to pin under the header.
+ *
+ * Replaces my previous attempt using shadcn `variant="inset"` + nested
+ * scroll containers + sticky PageHeader, which broke sticky because
+ * shadcn's default `position: fixed` sidebar + nested overflow conflicted.
  */
+export interface AppOutletContext {
+  pageHeaderSlot: HTMLDivElement | null;
+}
+
 export function AppShell() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
+  const [pageHeaderSlot, setPageHeaderSlot] = useState<HTMLDivElement | null>(null);
 
   // Linear-style chord bindings. Derived from ROUTE_CHORDS so the
   // sidebar / palette / chords stay in lockstep — adding a route to
-  // the map enables `g <key>` automatically. The hook itself bypasses
-  // chords inside form inputs and while a Radix dialog is open, so
-  // these are safe to register at the top of the authenticated layout.
+  // the map enables `g <key>` automatically.
   const chordBindings = useMemo<ChordBinding[]>(
     () =>
       Object.entries(ROUTE_CHORDS).map(([path, key]) => ({
@@ -54,6 +87,11 @@ export function AppShell() {
     [navigate],
   );
   useChordKeybinding(chordBindings);
+
+  const outletContext: AppOutletContext = useMemo(
+    () => ({ pageHeaderSlot }),
+    [pageHeaderSlot],
+  );
 
   if (isLoading) {
     return (
@@ -69,16 +107,16 @@ export function AppShell() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <SidebarProvider>
+      <SidebarProvider className="h-svh overflow-hidden">
         <NavigationProgress />
         <CommandPalette />
 
         {/* Autofill honeypot. Chrome / Safari ignore autoComplete="off"
-            on text inputs and aggressively offer the saved login
-            email/password on the first plausible-looking input they find.
-            Sit a hidden input + password pair at the very top of the
-            authenticated DOM so the browser fills it instead of any real
-            Title / search / whatever input downstream. */}
+            on text inputs and aggressively offer saved login credentials
+            into the first plausible-looking input. Sit a hidden
+            username/password pair at the top of the authenticated DOM
+            so the browser fills it instead of any real Title / search /
+            whatever input downstream. */}
         <div
           aria-hidden="true"
           style={{
@@ -100,24 +138,39 @@ export function AppShell() {
           />
         </div>
 
-        <AppSidebar />
+        {/* Stage frame — continuous sidebar-tinted bg under everything;
+            wraps the whole sidebar + main area so the rounded panel
+            inside reads as a card "floating" on the stage. */}
+        <div className="flex w-full h-full overflow-hidden bg-sidebar">
+          <AppSidebar />
 
-        <SidebarInset className="flex flex-col h-svh overflow-hidden">
-          {/* Mobile header — shadcn SidebarTrigger doubles as the
-              hamburger; logo + name read as the app identifier when the
-              sidebar is hidden behind the sheet. Desktop: SidebarTrigger
-              is hidden via `md:hidden` because the sidebar is always
-              visible (or icon-collapsed) on md+. */}
-          <div className="flex md:hidden items-center gap-3 px-4 py-3 border-b border-border">
-            <SidebarTrigger />
-            <Logo size="sm" />
-            <span className="font-mono font-bold text-sm text-brand">openma</span>
-          </div>
+          <div className="flex-1 min-w-0 flex flex-col min-h-0">
+            {/* Top toolbar on stage — sidebar collapse trigger + mobile
+                brand. Never scrolls. Lives outside the rounded panel
+                so the panel's top corner can round cleanly. */}
+            <header className="h-11 shrink-0 flex items-center gap-2 px-2 bg-sidebar">
+              <SidebarTrigger className="h-7 w-7 text-fg-muted hover:text-fg" />
+              <div className="flex items-center gap-1.5 md:hidden">
+                <Logo size="sm" />
+                <span className="font-mono font-bold text-sm text-brand">openma</span>
+              </div>
+            </header>
 
-          <div className="flex-1 overflow-y-auto bg-bg">
-            <Outlet />
+            {/* Rounded panel — top-left rounded only so it visually fuses
+                with the sidebar on its left and the viewport edge on the
+                right/bottom. Hosts the per-page header slot (sticky by
+                construction) + scrollable main. */}
+            <div className="flex-1 min-h-0 rounded-tl-lg border-t border-l border-border bg-bg flex flex-col overflow-hidden">
+              <div
+                ref={setPageHeaderSlot}
+                className="empty:hidden shrink-0 border-b border-border"
+              />
+              <main className="flex-1 min-h-0 overflow-y-auto bg-bg">
+                <Outlet context={outletContext} />
+              </main>
+            </div>
           </div>
-        </SidebarInset>
+        </div>
       </SidebarProvider>
     </TooltipProvider>
   );
