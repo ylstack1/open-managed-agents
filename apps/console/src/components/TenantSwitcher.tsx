@@ -80,6 +80,13 @@ export function TenantSwitcher() {
 
   const current = tenants.find((t) => t.id === active);
 
+  // Initial render after tenants land but BEFORE the useEffect picks an
+  // active id: `current` is undefined. Previously we rendered the Avatar
+  // with `name="?"` here, which then visibly snapped to the real initial
+  // letter ("?" → "M") on the next tick. Hold the row at the same shape
+  // until current is resolved so nothing jumps.
+  const ready = current != null;
+
   return (
     <>
       <div className="relative" ref={dropdownRef}>
@@ -88,23 +95,32 @@ export function TenantSwitcher() {
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Switch workspace"
-          onClick={() => setOpen((o) => !o)}
-          className="w-full h-11 px-3 flex items-center gap-2 hover:bg-sidebar-accent transition-colors text-left group group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center"
+          onClick={() => ready && setOpen((o) => !o)}
+          disabled={!ready}
+          className="w-full h-11 px-3 flex items-center gap-2 hover:bg-sidebar-accent transition-colors text-left group group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center disabled:cursor-default disabled:hover:bg-transparent"
         >
-          <Avatar name={current?.name ?? "?"} size="sm" squared />
+          {ready ? (
+            <Avatar name={current.name} size="sm" squared />
+          ) : (
+            // Skeleton avatar — locked to the same 24×24 footprint so
+            // there's no layout shift when the real Avatar slots in.
+            <div className="size-6 rounded-md bg-sidebar-accent shrink-0" aria-hidden="true" />
+          )}
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <div className="text-sm font-medium truncate text-fg">
-              {current ? displayName(current) : "Workspace"}
+              {ready ? displayName(current) : " "}
             </div>
-            {current && tenants.length > 1 && (
+            {ready && tenants.length > 1 && (
               <div className="text-[10px] text-fg-subtle uppercase tracking-wider">
                 {current.role}
               </div>
             )}
           </div>
-          <svg className="w-3.5 h-3.5 text-fg-subtle shrink-0 group-data-[collapsible=icon]:hidden" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          {ready && (
+            <svg className="w-3.5 h-3.5 text-fg-subtle shrink-0 group-data-[collapsible=icon]:hidden" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          )}
         </button>
 
         {open && (

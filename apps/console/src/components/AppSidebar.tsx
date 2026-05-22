@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import type { ComponentType } from "react";
 import { NavLink, useLocation } from "react-router";
-import { BookOpenIcon, LogOutIcon } from "lucide-react";
 
 import {
   Sidebar,
@@ -16,12 +15,9 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 
-import { useAuth } from "../lib/auth";
-import { useTheme } from "../lib/theme";
-import { authClient } from "../lib/auth-client";
 import { TenantSwitcher } from "./TenantSwitcher";
 import { Logo } from "./Logo";
-import { Avatar } from "./Avatar";
+import { UserProfile } from "./UserProfile";
 import {
   AgentIcon,
   ApiKeysIcon,
@@ -94,82 +90,22 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const themeOptions = [
-  { value: "light" as const, label: "Light" },
-  { value: "dark" as const, label: "Dark" },
-  { value: "system" as const, label: "System" },
-];
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="flex items-center rounded-md bg-sidebar-accent p-0.5 gap-0.5 mx-2">
-      {themeOptions.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => setTheme(opt.value)}
-          className={`flex-1 inline-flex items-center justify-center px-2 py-1 text-xs rounded transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] ${
-            theme === opt.value
-              ? "bg-sidebar text-sidebar-foreground font-medium shadow-sm"
-              : "text-fg-muted hover:text-sidebar-foreground"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function UserMenu() {
-  const { user } = useAuth();
-  if (!user) return null;
-  const handleSignOut = async () => {
-    await authClient.signOut();
-    window.location.href = "/login";
-  };
-  // h-11 px-3 + size="sm" avatar (24x24) puts the avatar's center on
-  // the same x as the brand logo, tenant-switcher avatar, and the
-  // SidebarMenuButton icons in <SidebarContent> — single 24px-from-edge
-  // vertical axis for every icon in the column.
-  return (
-    <button
-      type="button"
-      onClick={handleSignOut}
-      title={`Sign out (${user.name || user.email})`}
-      aria-label="Sign out"
-      className="w-full h-11 px-3 flex items-center gap-2 hover:bg-sidebar-accent transition-colors"
-    >
-      <Avatar name={user.name || user.email} size="sm" />
-      <div className="flex-1 min-w-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
-        <div className="text-sm text-sidebar-foreground truncate">
-          {user.name || user.email}
-        </div>
-        {user.email && user.name && (
-          <div className="text-[11px] text-fg-subtle truncate">{user.email}</div>
-        )}
-      </div>
-      <LogOutIcon className="size-4 text-fg-subtle group-hover:text-fg-muted shrink-0 group-data-[collapsible=icon]:hidden" />
-    </button>
-  );
-}
-
 /**
  * Console sidebar. Single vertical "icon axis" runs at 24px from the
- * sidebar's left edge — brand logo, tenant avatar, nav-item icons,
- * and footer doc/logout/user avatar all centre on that x:
+ * sidebar's left edge — brand logo, tenant avatar, every nav-item icon,
+ * and the footer user avatar all centre on that x:
  *
- *   - Custom rows (brand, tenant trigger, user menu) use
- *     `h-11 px-3 flex items-center gap-2` + 24-square element (logo /
- *     avatar) → centre at 12 + 12 = 24px.
- *   - `SidebarMenuButton`-driven rows (nav items, doc link, theme
- *     toggle) inherit shadcn's `px-2` group wrapper + button's own
- *     `px-2` + `size-4` icon → centre at 8 + 8 + 8 = 24px.
+ *   - Custom rows (brand, tenant trigger, user-profile trigger) use
+ *     `h-11 px-3 flex items-center gap-2` + a 24-square element
+ *     (Logo h-6 w-6, Avatar size="sm") → centre at 12 + 12 = 24px.
+ *   - `SidebarMenuButton`-driven rows (nav items) inherit shadcn's
+ *     `px-2` group wrapper + button's own `px-2` + `size-4` icon
+ *     → centre at 8 + 8 + 8 = 24px.
  *
- * Active-route highlighting uses `useLocation` rather than `NavLink`'s
- * isActive because `SidebarMenuButton` already renders the brand-tinted
- * active state via `data-[active]` — passing it through `isActive` keeps
- * the styling consistent with everything else in shadcn.
+ * Footer hosts a single `UserProfile` dropdown that bundles
+ * Documentation, theme picker, and Sign out — previously three
+ * separate rows; consolidated because they all belong to "the
+ * signed-in user's account menu", not navigation.
  */
 export function AppSidebar() {
   const { pathname } = useLocation();
@@ -232,25 +168,9 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-0">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Documentation">
-              <a
-                href="https://docs.openma.dev"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <BookOpenIcon className="size-4 opacity-80" />
-                <span>Documentation</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <div className="group-data-[collapsible=icon]:hidden">
-          <ThemeToggle />
-        </div>
-        <UserMenu />
+        <UserProfile />
       </SidebarFooter>
     </Sidebar>
   );
 }
+
