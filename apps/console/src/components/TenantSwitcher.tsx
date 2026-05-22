@@ -102,9 +102,13 @@ export function TenantSwitcher() {
           {ready ? (
             <Avatar name={current.name} size="sm" squared />
           ) : (
-            // Skeleton avatar — locked to the same 24×24 footprint so
-            // there's no layout shift when the real Avatar slots in.
-            <div className="size-6 rounded-md bg-sidebar-accent shrink-0" aria-hidden="true" />
+            // Skeleton avatar — same 24×24 box AND same bg tint as the
+            // real Avatar's `AvatarFallback` (bg-brand-subtle), so when
+            // `current` resolves the only visual change is the initial
+            // letter appearing on top of an already-correct color.
+            // Previously this was bg-sidebar-accent (gray) → the color
+            // jump from gray to coral read as a flicker.
+            <div className="size-6 rounded-md bg-brand-subtle shrink-0" aria-hidden="true" />
           )}
           <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
             <div className="text-sm font-medium truncate text-fg">

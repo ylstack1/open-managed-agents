@@ -76,82 +76,136 @@ import { consolePlugins } from "./plugins/registry";
 
 const protectedRoutes: RouteObject[] = [
   { index: true, element: <Dashboard />, handle: { crumb: "Dashboard" } },
-  { path: "agents", element: <AgentsList />, handle: { crumb: "Agents" } },
-  { path: "agents/:id", element: <AgentDetail />, handle: { crumb: "Agent" } },
-  { path: "sessions", element: <SessionsList />, handle: { crumb: "Sessions" } },
+  // Nested route groups so detail pages publish a proper hierarchy
+  // through `useMatches()` — `/agents/:id` resolves to
+  // [agents-parent, agents/:id], so AppBreadcrumb renders
+  // `Agents › Agent` instead of just `Agent` with no link back.
   {
-    path: "sessions/:id",
-    handle: { crumb: "Session" },
-    // SessionDetail lazy-loads — it pulls in ai-elements + Shiki +
-    // Streamdown + mermaid + dozens of language defs (~500 kB gzipped).
-    // Splitting it out keeps the initial bundle for /agents, /sessions
-    // list, etc. under 350 kB.
-    lazy: async () => {
-      const { SessionDetail } = await import("./pages/SessionDetail");
-      return { Component: SessionDetail };
-    },
+    path: "agents",
+    handle: { crumb: "Agents" },
+    children: [
+      { index: true, element: <AgentsList /> },
+      { path: ":id", element: <AgentDetail />, handle: { crumb: "Agent" } },
+    ],
+  },
+  {
+    path: "sessions",
+    handle: { crumb: "Sessions" },
+    children: [
+      { index: true, element: <SessionsList /> },
+      {
+        path: ":id",
+        handle: { crumb: "Session" },
+        // SessionDetail lazy-loads — it pulls in ai-elements + Shiki +
+        // Streamdown + mermaid + dozens of language defs (~500 kB
+        // gzipped). Splitting it out keeps the initial bundle for
+        // /agents, /sessions list, etc. under 350 kB.
+        lazy: async () => {
+          const { SessionDetail } = await import("./pages/SessionDetail");
+          return { Component: SessionDetail };
+        },
+      },
+    ],
   },
   { path: "files", element: <FilesList />, handle: { crumb: "Files" } },
-  { path: "evals", element: <EvalRunsList />, handle: { crumb: "Eval Runs" } },
-  { path: "evals/:id", element: <EvalRunDetail />, handle: { crumb: "Eval Run" } },
-  { path: "environments", element: <EnvironmentsList />, handle: { crumb: "Environments" } },
-  { path: "environments/:id", element: <EnvironmentDetail />, handle: { crumb: "Environment" } },
+  {
+    path: "evals",
+    handle: { crumb: "Eval Runs" },
+    children: [
+      { index: true, element: <EvalRunsList /> },
+      { path: ":id", element: <EvalRunDetail />, handle: { crumb: "Eval Run" } },
+    ],
+  },
+  {
+    path: "environments",
+    handle: { crumb: "Environments" },
+    children: [
+      { index: true, element: <EnvironmentsList /> },
+      {
+        path: ":id",
+        element: <EnvironmentDetail />,
+        handle: { crumb: "Environment" },
+      },
+    ],
+  },
   { path: "skills", element: <SkillsList />, handle: { crumb: "Skills" } },
   { path: "vaults", element: <VaultsList />, handle: { crumb: "Credential Vaults" } },
-  { path: "memory", element: <MemoryStoresList />, handle: { crumb: "Memory Stores" } },
-  { path: "memory/:id", element: <MemoryStoreDetail />, handle: { crumb: "Memory Store" } },
+  {
+    path: "memory",
+    handle: { crumb: "Memory Stores" },
+    children: [
+      { index: true, element: <MemoryStoresList /> },
+      {
+        path: ":id",
+        element: <MemoryStoreDetail />,
+        handle: { crumb: "Memory Store" },
+      },
+    ],
+  },
   { path: "model-cards", element: <ModelCardsList />, handle: { crumb: "Model Cards" } },
   { path: "api-keys", element: <ApiKeysList />, handle: { crumb: "API Keys" } },
   { path: "runtimes", element: <RuntimesList />, handle: { crumb: "Local Runtimes" } },
   {
-    path: "integrations/linear",
-    element: <IntegrationsLinearList />,
-    handle: { crumb: "Linear" },
-  },
-  {
-    path: "integrations/linear/publish",
-    element: <IntegrationsLinearPublishPage />,
-    handle: { crumb: "Publish" },
-  },
-  {
-    path: "integrations/linear/install-pat",
-    element: <IntegrationsLinearPatInstallPage />,
-    handle: { crumb: "Install PAT" },
-  },
-  {
-    path: "integrations/linear/installations/:id",
-    element: <IntegrationsLinearWorkspace />,
-    handle: { crumb: "Workspace" },
-  },
-  {
-    path: "integrations/github",
-    element: <IntegrationsGitHubList />,
-    handle: { crumb: "GitHub" },
-  },
-  {
-    path: "integrations/github/bind",
-    element: <IntegrationsGitHubBindPage />,
-    handle: { crumb: "Bind" },
-  },
-  {
-    path: "integrations/github/installations/:id",
-    element: <IntegrationsGitHubWorkspace />,
-    handle: { crumb: "Workspace" },
-  },
-  {
-    path: "integrations/slack",
-    element: <IntegrationsSlackList />,
-    handle: { crumb: "Slack" },
-  },
-  {
-    path: "integrations/slack/publish",
-    element: <IntegrationsSlackPublishPage />,
-    handle: { crumb: "Publish" },
-  },
-  {
-    path: "integrations/slack/installations/:id",
-    element: <IntegrationsSlackWorkspace />,
-    handle: { crumb: "Workspace" },
+    path: "integrations",
+    handle: { crumb: "Integrations" },
+    children: [
+      {
+        path: "linear",
+        handle: { crumb: "Linear" },
+        children: [
+          { index: true, element: <IntegrationsLinearList /> },
+          {
+            path: "publish",
+            element: <IntegrationsLinearPublishPage />,
+            handle: { crumb: "Publish" },
+          },
+          {
+            path: "install-pat",
+            element: <IntegrationsLinearPatInstallPage />,
+            handle: { crumb: "Install PAT" },
+          },
+          {
+            path: "installations/:id",
+            element: <IntegrationsLinearWorkspace />,
+            handle: { crumb: "Workspace" },
+          },
+        ],
+      },
+      {
+        path: "github",
+        handle: { crumb: "GitHub" },
+        children: [
+          { index: true, element: <IntegrationsGitHubList /> },
+          {
+            path: "bind",
+            element: <IntegrationsGitHubBindPage />,
+            handle: { crumb: "Bind" },
+          },
+          {
+            path: "installations/:id",
+            element: <IntegrationsGitHubWorkspace />,
+            handle: { crumb: "Workspace" },
+          },
+        ],
+      },
+      {
+        path: "slack",
+        handle: { crumb: "Slack" },
+        children: [
+          { index: true, element: <IntegrationsSlackList /> },
+          {
+            path: "publish",
+            element: <IntegrationsSlackPublishPage />,
+            handle: { crumb: "Publish" },
+          },
+          {
+            path: "installations/:id",
+            element: <IntegrationsSlackWorkspace />,
+            handle: { crumb: "Workspace" },
+          },
+        ],
+      },
+    ],
   },
   // Plugin-contributed routes (hosted-only extensions). Default empty in
   // OSS — hosted deploy overlays plugins/registry.ts to inject billing

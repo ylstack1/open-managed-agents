@@ -133,8 +133,6 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
 
-      <TenantSwitcher />
-
       <SidebarContent className="bg-sidebar">
         {groups.map((group) => (
           <SidebarGroup key={group.label}>
@@ -164,7 +162,14 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
 
+      {/* Footer hosts tenant switcher → user profile. Together they're
+          the "who am I" stack — workspace context + signed-in identity
+          live at the bottom of the sidebar so nav doesn't have to
+          scroll past them. Order matches Linear / Vercel: tenant first
+          (higher up), user last (closest to bottom-left corner where
+          the eye lands). */}
       <SidebarFooter className="bg-sidebar p-0">
+        <TenantSwitcher />
         <UserProfile />
       </SidebarFooter>
     </Sidebar>
