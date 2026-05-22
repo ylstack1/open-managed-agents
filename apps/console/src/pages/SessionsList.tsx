@@ -3,19 +3,15 @@ import { useNavigate } from "react-router";
 import { Controller, useFieldArray, useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useApi } from "../lib/api";
+import { useApi, ApiError } from "../lib/api";
 import { usePagedList } from "../lib/usePagedList";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { Combobox } from "../components/Combobox";
 import { ListPage } from "../components/ListPage";
 
-interface Session {
-  id: string; title?: string | null; agent: { id: string; version: number };
-  environment_id: string;
-  status?: string; created_at: string; archived_at?: string;
-  metadata?: Record<string, unknown>;
-}
+import type { SessionRecord as Session } from "../types/session";
+
 interface Vault { id: string; name: string; }
 interface FilePick { id: string; filename: string; size_bytes: number; }
 interface MemoryStorePick { id: string; name: string; }
@@ -536,7 +532,7 @@ export function SessionsList() {
       // "Insufficient balance" message has already shown; close the
       // modal and surface the Billing page so the user can top up
       // without hunting in the sidebar.
-      if ((err as { status?: number }).status === 402) {
+      if (err instanceof ApiError && err.status === 402) {
         closeModal();
         nav("/billing");
       }

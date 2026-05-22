@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useApi } from "../lib/api";
 import { ListPage } from "../components/ListPage";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 
 interface MemoryStore {
   id: string;

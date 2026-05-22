@@ -1,20 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useApi, getActiveTenantId } from "../lib/api";
-import { useToast } from "../components/Toast";
+import { toast } from "sonner";
 import { ListPage } from "../components/ListPage";
 import { usePagedList } from "../lib/usePagedList";
-
-interface FileRecord {
-  id: string;
-  type?: "file";
-  filename: string;
-  media_type: string;
-  size_bytes: number;
-  scope_id?: string;
-  downloadable?: boolean;
-  created_at: string;
-}
+import type { FileRecord } from "@open-managed-agents/api-types";
 
 interface ListResponse {
   data: FileRecord[];
@@ -25,7 +15,6 @@ interface ListResponse {
 
 export function FilesList() {
   const { api } = useApi();
-  const { toast } = useToast();
   const [scopeFilter, setScopeFilter] = useState("");
   const [search, setSearch] = useState("");
 
@@ -70,7 +59,7 @@ export function FilesList() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const message = (body as { error?: string }).error || `HTTP ${res.status}`;
-        toast(`Download failed: ${message}`, "error");
+        toast.error(`Download failed: ${message}`);
         return;
       }
       const blob = await res.blob();
@@ -81,7 +70,7 @@ export function FilesList() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      toast(`Download failed: ${e instanceof Error ? e.message : "network error"}`, "error");
+      toast.error(`Download failed: ${e instanceof Error ? e.message : "network error"}`);
     }
   };
 

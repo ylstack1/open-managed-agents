@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useApi, getActiveTenantId, setActiveTenantId } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
 import { Modal } from "./Modal";
-import { Button } from "./Button";
+import { Button } from "@/components/ui/button";
 import { Avatar } from "./Avatar";
 
 // Slot beneath the logo in the sidebar. Hidden when the user has only one

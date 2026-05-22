@@ -1,4 +1,12 @@
-import * as Select from "@radix-ui/react-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon } from "lucide-react";
 
 interface PaginationProps {
   /** Zero-based current page; rendered as `Page {pageIndex + 1}`. */
@@ -17,30 +25,6 @@ interface PaginationProps {
 }
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-
-function ChevronLeft() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function ChevronRight() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-
-function ChevronDown() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
 
 /**
  * Build the visible list of page indices. Always shows page 0 and the
@@ -69,27 +53,17 @@ function buildPageList(
   const hi = Math.min(last - 1, pageIndex + 1);
   const out: Array<number | "…"> = [];
 
-  // Always include page 0.
   out.push(0);
-
-  // Gap between page 0 and the window?
   if (lo > 1) out.push("…");
-
-  // Window around current page.
   for (let i = lo; i <= hi; i++) out.push(i);
-
-  // Window contains the last known page already?
   if (hi < last - 1) out.push("…");
   if (last > 0) out.push(last);
-
-  // Trailing ellipsis to signal "more pages exist past what we know".
   if (hasNext) out.push("…");
 
-  // Dedup consecutive numbers (happens when knownPages is small).
+  // Dedup consecutive duplicates (small knownPages can cause overlap).
   const dedup: Array<number | "…"> = [];
   for (const v of out) {
-    const prev = dedup[dedup.length - 1];
-    if (v === prev) continue;
+    if (v === dedup[dedup.length - 1]) continue;
     dedup.push(v);
   }
   return dedup;
@@ -101,10 +75,10 @@ function buildPageList(
  *   Showing 21-40            [20 ▼ per page]            « ‹  3 [4] 5  …  ›
  *
  * Left:    "Showing X-Y" range (no total — backend is cursor-based, no count).
- * Middle:  Radix Select page-size picker. Caller provides allowed values.
- * Right:   First / Prev / numbered tiles with ellipsis / Next, all bordered
- *          to match the table card chrome above. Current page tile uses
- *          brand color so it's unmistakable at a glance.
+ * Middle:  shadcn Select page-size picker. Caller provides allowed values.
+ * Right:   First / Prev / numbered tiles with ellipsis / Next, rendered
+ *          via shadcn Button so focus rings + sizing stay aligned with
+ *          the rest of the design system.
  *
  * Pair with `usePagedList`.
  */
@@ -121,15 +95,6 @@ export function Pagination({
 }: PaginationProps) {
   const hasPrev = pageIndex > 0;
 
-  const navBtn =
-    "inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-[32px] sm:min-h-8 sm:h-8 px-2 text-[13px] text-fg-muted bg-bg hover:bg-bg-sidebar hover:text-fg border border-border rounded-md transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-bg disabled:hover:text-fg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
-  const pageBtn = (active: boolean) =>
-    `inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-[32px] sm:min-h-8 sm:h-8 px-2 text-[13px] border rounded-md transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg tabular-nums ${
-      active
-        ? "bg-brand text-brand-fg border-brand font-medium"
-        : "text-fg-muted bg-bg hover:bg-bg-sidebar hover:text-fg border-border"
-    }`;
-
   // 1-based range display. itemCount tells us the actual rows on screen
   // — true "to" is start + itemCount - 1, not start + pageSize - 1
   // (last page may be partial).
@@ -143,94 +108,90 @@ export function Pagination({
     <div className="flex items-center justify-between gap-3 border-t border-border bg-bg-sidebar/40 px-4 py-2.5 flex-wrap">
       {/* Left: range */}
       <div className="text-[12px] text-fg-subtle font-mono tabular-nums min-w-[100px]">
-        {showRange ? `Showing ${rangeStart}–${rangeEnd}` : " "}
+        {showRange ? `Showing ${rangeStart}–${rangeEnd}` : " "}
       </div>
 
       {/* Middle: page size selector */}
       <div className="flex items-center gap-2 text-[12px] text-fg-subtle font-mono">
-        <Select.Root value={String(pageSize)} onValueChange={(v) => onPageSizeChange(parseInt(v, 10))}>
-          <Select.Trigger
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSizeChange(parseInt(v, 10))}
+        >
+          <SelectTrigger
             aria-label="Rows per page"
-            className="inline-flex items-center gap-1.5 min-h-11 sm:min-h-8 sm:h-8 px-2.5 text-[13px] text-fg bg-bg border border-border rounded-md hover:bg-bg-sidebar transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-bg tabular-nums"
+            size="sm"
+            className="w-auto min-w-[60px] tabular-nums"
           >
-            <Select.Value />
-            <Select.Icon><ChevronDown /></Select.Icon>
-          </Select.Trigger>
-          <Select.Portal>
-            <Select.Content
-              className="z-[60] overflow-hidden rounded-md border border-border bg-bg shadow-xl"
-              position="popper"
-              sideOffset={4}
-            >
-              <Select.Viewport className="p-1">
-                {pageSizeOptions.map((n) => (
-                  <Select.Item
-                    key={n}
-                    value={String(n)}
-                    className="flex items-center gap-2 rounded px-2.5 py-1.5 min-h-11 sm:min-h-0 text-[13px] text-fg cursor-pointer outline-none data-[highlighted]:bg-bg-sidebar data-[state=checked]:font-medium tabular-nums"
-                  >
-                    <Select.ItemText>{n}</Select.ItemText>
-                  </Select.Item>
-                ))}
-              </Select.Viewport>
-            </Select.Content>
-          </Select.Portal>
-        </Select.Root>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {pageSizeOptions.map((n) => (
+              <SelectItem key={n} value={String(n)} className="tabular-nums">
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <span className="text-fg-subtle">per page</span>
       </div>
 
       {/* Right: nav (First / Prev / numbered / Next) */}
       <div className="flex items-center gap-1">
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => onPageChange(0)}
           disabled={!hasPrev || loading}
           aria-label="First page"
-          className={navBtn}
         >
-          «
-        </button>
-        <button
+          <ChevronsLeftIcon />
+        </Button>
+        <Button
           type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => onPageChange(pageIndex - 1)}
           disabled={!hasPrev || loading}
           aria-label="Previous page"
-          className={navBtn}
         >
-          <ChevronLeft />
-        </button>
+          <ChevronLeftIcon />
+        </Button>
         {tiles.map((t, i) =>
           t === "…" ? (
             <span
               key={`ellipsis-${i}`}
               aria-hidden="true"
-              className="inline-flex items-center justify-center min-w-[32px] h-8 px-2 text-[13px] text-fg-subtle font-mono select-none"
+              className="inline-flex items-center justify-center min-w-[28px] h-7 px-1 text-[13px] text-fg-subtle font-mono select-none"
             >
               …
             </span>
           ) : (
-            <button
+            <Button
               key={t}
               type="button"
+              variant={t === pageIndex ? "default" : "outline"}
+              size="sm"
               onClick={() => onPageChange(t)}
               disabled={loading}
               aria-label={`Page ${t + 1}`}
               aria-current={t === pageIndex ? "page" : undefined}
-              className={pageBtn(t === pageIndex)}
+              className="tabular-nums min-w-[32px]"
             >
               {t + 1}
-            </button>
+            </Button>
           ),
         )}
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="icon-sm"
           onClick={() => onPageChange(pageIndex + 1)}
           disabled={!hasNext || loading}
           aria-label="Next page"
-          className={navBtn}
         >
-          <ChevronRight />
-        </button>
+          <ChevronRightIcon />
+        </Button>
       </div>
     </div>
   );

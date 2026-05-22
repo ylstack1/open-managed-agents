@@ -4,8 +4,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import { AuthProvider } from "./lib/auth";
-import { ToastProvider } from "./components/Toast";
-import { Layout } from "./components/Layout";
+import { Toaster } from "./components/ui/sonner";
+import { AppShell } from "./components/AppShell";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { queryClient } from "./lib/query-client";
 import { Login } from "./pages/Login";
@@ -55,14 +55,13 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <AuthProvider>
-            <BrowserRouter>
+        <AuthProvider>
+          <BrowserRouter>
               <Routes>
                 <Route path="login" element={<Login />} />
                 <Route path="cli/login" element={<CliLogin />} />
                 <Route path="connect-runtime" element={<ConnectRuntime />} />
-                <Route element={<Layout />}>
+                <Route element={<AppShell />}>
                   <Route index element={<Dashboard />} />
                   <Route path="agents" element={<AgentsList />} />
                   <Route path="agents/:id" element={<AgentDetail />} />
@@ -128,10 +127,10 @@ createRoot(document.getElementById("root")!).render(
                   )}
                   <Route path="*" element={<Navigate to="/agents" replace />} />
                 </Route>
-              </Routes>
-            </BrowserRouter>
-          </AuthProvider>
-        </ToastProvider>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+        <Toaster />
       </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>

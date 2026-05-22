@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useApi } from "../lib/api";
 import { usePagedList } from "../lib/usePagedList";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { Select, SelectOption } from "../components/Select";
 import { ListPage } from "../components/ListPage";
 

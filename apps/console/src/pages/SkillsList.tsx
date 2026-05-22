@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useApi } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
 import { Page } from "../components/Page";
 
@@ -537,7 +537,7 @@ export function SkillsList() {
           <div className="space-y-5">
             {/* Actions */}
             <div className="flex justify-end">
-              <Button variant="danger" size="sm" onClick={deleteSkill}>
+              <Button variant="destructive" size="sm" onClick={deleteSkill}>
                 Delete
               </Button>
             </div>

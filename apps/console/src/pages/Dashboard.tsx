@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../lib/auth";
 import { useApiQuery } from "../lib/useApiQuery";
-import { useToast } from "../components/Toast";
+import { toast } from "sonner";
 import { StatusPill } from "../components/Badge";
 import { BrandLoader } from "../components/BrandLoader";
 import { EmptyState } from "../components/EmptyState";
@@ -28,7 +28,6 @@ interface RecentSession {
 export function Dashboard() {
   const nav = useNavigate();
   const { user: _user } = useAuth();
-  const { toast } = useToast();
   const [copied, setCopied] = useState<string | null>(null);
 
   // Headline cards + recent panel each ride their own TQ query so the
@@ -51,7 +50,7 @@ export function Dashboard() {
   const copy = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopied(key);
-    toast("Copied", "success");
+    toast.success("Copied");
     setTimeout(() => setCopied(null), 1600);
   };
 

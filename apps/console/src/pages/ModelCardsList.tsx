@@ -2,10 +2,10 @@ import { useState, useCallback } from "react";
 import { useApi } from "../lib/api";
 import { usePagedList } from "../lib/usePagedList";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { ListPage } from "../components/ListPage";
 import { TextInput, SecretInput } from "../components/Input";
-import { useToast } from "../components/Toast";
+import { toast } from "sonner";
 import type { ModelCard } from "@open-managed-agents/api-types";
 
 const PROVIDERS = [
@@ -29,7 +29,6 @@ const INITIAL_FORM = {
 
 export function ModelCardsList() {
   const { api } = useApi();
-  const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...INITIAL_FORM });
@@ -107,13 +106,12 @@ export function ModelCardsList() {
         );
         const probe = created.probe;
         if (probe?.ok === true) {
-          toast?.(`Model card created — ${form.provider} key verified.`, "success");
+          toast.success(`Model card created — ${form.provider} key verified.`);
         } else if (probe?.ok === false) {
-          toast?.(
+          toast.warning(
             probe.message
               ? `Model card saved but the key didn't work: ${probe.message}`
               : "Model card saved but the key didn't work — check api_key / base_url / model id.",
-            "warning",
           );
         }
         // ok === null (unsupported provider) → no toast, success is implicit.

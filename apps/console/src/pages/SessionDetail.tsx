@@ -1,13 +1,19 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router";
 import { useApi } from "../lib/api";
-import { useToast } from "../components/Toast";
+import { toast } from "sonner";
 import { Markdown } from "../components/Markdown";
 import { formatDuration, formatRelative, shortenId } from "../lib/format";
 import { Badge, StatusPill } from "../components/Badge";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { AgentIcon, ClockIcon, DurationIcon, EnvIcon, VaultIcon } from "../components/icons";
+import { FilesPanel, ResourcePanel } from "./session-detail/Panels";
+import {
+  TrajectoryOutcomeChip,
+  TrajectoryRewardChip,
+  TrajectoryViewerModal,
+} from "./session-detail/Trajectory";
 import { TimelineView } from "../components/timeline/TimelineView";
 import type { Event } from "../lib/events";
 import type { Trajectory, TrajectoryOutcome } from "../lib/trajectory";
@@ -62,7 +68,6 @@ interface PendingEntry {
 export function SessionDetail() {
   const { id } = useParams();
   const { api, streamEvents } = useApi();
-  const { toast } = useToast();
   const [events, setEvents] = useState<Event[]>([]);
   /** In-flight assistant streams keyed by message_id. Each entry holds
    *  the deltas accumulated so far. Wiped on the matching agent.message
@@ -1194,7 +1199,7 @@ export function SessionDetail() {
               multiple
               maxFiles={10}
               maxFileSize={25 * 1024 * 1024}
-              onError={(err) => toast(err.message, "error")}
+              onError={(err) => toast.error(err.message)}
               globalDrop
               onSubmit={async ({ text, files }) => {
                 // PromptInput captured the textarea's value into `text`
@@ -1258,115 +1263,6 @@ export function SessionDetail() {
  *  the trajectory is loading / errored / still running so we never
  *  paint an inaccurate state. The "running" outcome is intentionally
  *  squelched here — StatusPill already renders the live status. */
-function TrajectoryOutcomeChip({
-  trajectory,
-}: {
-  trajectory: Trajectory | "loading" | "error" | undefined;
-}) {
-  if (!trajectory || trajectory === "loading" || trajectory === "error") return null;
-  if (trajectory.outcome === "running") return null;
-  const tone = outcomeToStatusTone(trajectory.outcome);
-  return (
-    <StatusPill
-      status={tone}
-      label={`Outcome: ${trajectory.outcome}`}
-    />
-  );
-}
-
-/** Reward chip rendered in the session header strip. Pure read-out of
- *  the verifier output; tooltip shows verifier_id for debugging. */
-function TrajectoryRewardChip({
-  trajectory,
-}: {
-  trajectory: Trajectory | "loading" | "error" | undefined;
-}) {
-  if (!trajectory || trajectory === "loading" || trajectory === "error") return null;
-  const r = trajectory.reward;
-  if (!r) return null;
-  const headline = rewardHeadline(r);
-  const isPass = r.final_reward >= 0.99;
-  const isFail = r.final_reward <= 0;
-  // Reuse StatusPill tone tokens so the visual language stays consistent
-  // with the outcome chip next to it (success = same green, failure = red).
-  const tone = isPass ? "completed" : isFail ? "errored" : "neutral";
-  const titleParts = [
-    `Reward: ${r.final_reward.toFixed(4)}`,
-    r.verifier_id ? `verifier: ${r.verifier_id}` : null,
-    r.computed_at ? `computed: ${new Date(r.computed_at).toLocaleString()}` : null,
-  ].filter(Boolean) as string[];
-  return (
-    <span title={titleParts.join(" · ")}>
-      <StatusPill status={tone} label={`Reward: ${headline}`} />
-    </span>
-  );
-}
-
-/** Trajectory viewer modal — Phase 3 minimum-viable: pretty-printed
- *  JSON with a Download button. Anthropic Messages / Inspect AI / OTel
- *  projections are Phase 4. The download uses an in-memory blob URL
- *  so we don't have to round-trip to a server endpoint. */
-function TrajectoryViewerModal({
-  open,
-  onClose,
-  sessionId,
-  trajectory,
-}: {
-  open: boolean;
-  onClose: () => void;
-  sessionId: string;
-  trajectory: Trajectory | "loading" | "error" | undefined;
-}) {
-  const ready = trajectory && trajectory !== "loading" && trajectory !== "error";
-  const json = ready ? JSON.stringify(trajectory, null, 2) : "";
-
-  function download() {
-    if (!ready) return;
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `trajectory-${sessionId}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Trajectory"
-      subtitle={ready ? `${trajectory.trajectory_id} · session ${sessionId}` : `session ${sessionId}`}
-      maxWidth="max-w-4xl"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Close</Button>
-          <Button onClick={download} disabled={!ready}>Download JSON</Button>
-        </>
-      }
-    >
-      {trajectory === "loading" && (
-        <div className="text-sm text-fg-subtle">Loading trajectory…</div>
-      )}
-      {trajectory === "error" && (
-        <div className="text-sm text-danger">
-          Trajectory unavailable. The session may not have any events yet, or the
-          sandbox worker is unreachable. Retry by reloading the page.
-        </div>
-      )}
-      {trajectory === undefined && (
-        <div className="text-sm text-fg-subtle">No trajectory loaded yet.</div>
-      )}
-      {ready && (
-        <pre className="font-mono text-[11px] bg-bg-surface border border-border rounded px-3 py-2 overflow-auto max-h-[60vh] text-fg whitespace-pre">
-          {json}
-        </pre>
-      )}
-    </Modal>
-  );
-}
 
 function ViewTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -1522,182 +1418,6 @@ function RelativeTimeBadge({ iso }: { iso: string }) {
   );
 }
 
-function ResourcePanel({
-  panel,
-  onClose,
-}: {
-  panel: { kind: "agent" | "environment" | "vault"; id: string };
-  onClose: () => void;
-}) {
-  // useApi returns { api, streamEvents } — destructure the call function
-  // explicitly. A previous version assigned the whole object to `api` and
-  // then called `api(url)`, which threw "api is not a function" and white-
-  // screened the page on first badge click.
-  const { api } = useApi();
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setData(null);
-    setErr(null);
-    const url =
-      panel.kind === "agent"
-        ? `/v1/agents/${panel.id}`
-        : panel.kind === "environment"
-        ? `/v1/environments/${panel.id}`
-        : `/v1/vaults/${panel.id}`;
-    api<Record<string, unknown>>(url)
-      .then((d) => setData(d))
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-    // `api` from useApi() is a fresh closure every render — including it in
-    // deps caused setData → re-render → new api → effect refire → infinite
-    // loop. The stable inputs are kind + id; api itself is callable as-is.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel.kind, panel.id]);
-
-  const linkPath =
-    panel.kind === "agent"
-      ? `/agents/${panel.id}`
-      : panel.kind === "environment"
-      ? `/environments/${panel.id}`
-      : `/vaults/${panel.id}`;
-  const titleKind = panel.kind[0].toUpperCase() + panel.kind.slice(1);
-
-  // For agent / env, prefer name + description in the visible header.
-  const displayName = (data?.name as string | undefined) ?? panel.id;
-  const description = (data?.description as string | undefined) ?? null;
-
-  return (
-    <aside className="w-[420px] shrink-0 border-l border-border bg-bg flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b border-border flex items-start gap-3 shrink-0">
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-fg-subtle font-mono">
-            {titleKind}
-          </div>
-          <div className="text-base font-semibold text-fg truncate">{displayName}</div>
-          {description && (
-            <div className="text-xs text-fg-muted mt-0.5 line-clamp-2">{description}</div>
-          )}
-          <div className="text-[10px] font-mono text-fg-subtle mt-1 truncate">{panel.id}</div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-fg-subtle hover:text-fg-muted text-lg leading-none inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-8 sm:min-h-8 rounded hover:bg-bg-surface transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)]"
-          title="Close"
-          aria-label="Close panel"
-        >
-          ×
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
-        {err && <div className="text-danger">Failed to load: {err}</div>}
-        {!data && !err && <div className="text-fg-subtle">Loading…</div>}
-        {data && (
-          <pre className="font-mono text-fg-muted bg-bg-surface/40 border border-border/40 rounded px-3 py-2 overflow-x-auto whitespace-pre-wrap break-all text-[11px]">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        )}
-      </div>
-      <div className="px-4 py-3 border-t border-border shrink-0">
-        <Link
-          to={linkPath}
-          className="inline-flex items-center gap-1.5 text-sm text-info hover:text-info/80 font-medium"
-        >
-          Go to {panel.kind} →
-        </Link>
-      </div>
-    </aside>
-  );
-}
-
-interface SessionOutputFile {
-  filename: string;
-  size_bytes: number;
-  uploaded_at: string;
-  media_type: string;
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-function FilesPanel({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
-  const { api } = useApi();
-  const [files, setFiles] = useState<SessionOutputFile[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    setFiles(null);
-    setErr(null);
-    api<{ data: SessionOutputFile[]; has_more: boolean }>(
-      `/v1/sessions/${sessionId}/outputs`,
-    )
-      .then((d) => setFiles(d.data ?? []))
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-    // api closure changes every render; sessionId is the only stable input
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  return (
-    <aside className="w-[420px] shrink-0 border-l border-border bg-bg flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b border-border flex items-start gap-3 shrink-0">
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase tracking-wide text-fg-subtle font-mono">
-            Files
-          </div>
-          <div className="text-base font-semibold text-fg">Session outputs</div>
-          <div className="text-xs text-fg-muted mt-0.5">
-            Files the agent wrote to <code className="font-mono">/mnt/session/outputs/</code>
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="text-fg-subtle hover:text-fg-muted text-lg leading-none inline-flex items-center justify-center min-w-11 min-h-11 sm:min-w-8 sm:min-h-8 rounded hover:bg-bg-surface transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)]"
-          title="Close"
-          aria-label="Close panel"
-        >
-          ×
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4 text-xs">
-        {err && <div className="text-danger">Failed to load: {err}</div>}
-        {!files && !err && <div className="text-fg-subtle">Loading…</div>}
-        {files && files.length === 0 && (
-          <div className="text-fg-subtle">
-            No files yet. The agent must write under <code className="font-mono">/mnt/session/outputs/</code> for files to appear here.
-          </div>
-        )}
-        {files && files.length > 0 && (
-          <ul className="space-y-1">
-            {files.map((f) => (
-              <li
-                key={f.filename}
-                className="flex items-center gap-3 py-2 border-b border-border/40 last:border-b-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <a
-                    href={`/v1/sessions/${sessionId}/outputs/${encodeURIComponent(f.filename)}`}
-                    download={f.filename}
-                    className="font-mono text-fg hover:text-info truncate block"
-                    title={f.filename}
-                  >
-                    {f.filename}
-                  </a>
-                  <div className="text-[10px] text-fg-subtle mt-0.5">
-                    {formatBytes(f.size_bytes)} · {f.media_type} · {new Date(f.uploaded_at).toLocaleString()}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </aside>
-  );
-}
 
 /**
  * Renders a single canonical event using ai-elements primitives. Replaces

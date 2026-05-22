@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApi } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { Modal } from "../components/Modal";
 import { ListPage } from "../components/ListPage";
 

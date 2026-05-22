@@ -4,7 +4,8 @@ import { useApi } from "../lib/api";
 import { useApiQuery } from "../lib/useApiQuery";
 import { Modal } from "../components/Modal";
 import { Page } from "../components/Page";
-import { TabsRoot, TabList, Tab, TabPanel } from "../components/Tabs";
+import { PageHeader } from "../components/PageHeader";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface MemoryStore {
   id: string;
@@ -40,11 +41,11 @@ interface MemoryVersion {
   redacted?: boolean;
 }
 
-type Tab = "memories" | "versions" | "settings";
+type TabKey = "memories" | "versions" | "settings";
 
 export function MemoryStoreDetail() {
   const { id: storeId } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<Tab>("memories");
+  const [tab, setTab] = useState<TabKey>("memories");
   const [error, setError] = useState<string | null>(null);
 
   // Top-level store fetch via TQ. The two child panels do their own
@@ -66,36 +67,50 @@ export function MemoryStoreDetail() {
   if (!store) return <div className="flex-1 p-8 text-fg-muted">Loading...</div>;
 
   return (
-    <Page>
-      <Link to="/memory" className="text-sm text-fg-muted hover:text-fg mb-4 inline-block">← Memory stores</Link>
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{store.name}</h1>
-          {store.description && <p className="text-fg-muted mt-1">{store.description}</p>}
-          <p className="text-fg-subtle text-xs font-mono mt-1">
-            {store.id} · /mnt/memory/{store.name}/
-            {store.archived_at && <span className="ml-2 text-fg-muted">· archived {new Date(store.archived_at).toLocaleDateString()}</span>}
-          </p>
-        </div>
+    <Page
+      header={
+        <PageHeader
+          title={store.name}
+          subtitle={
+            <>
+              <Link to="/memory" className="text-sm text-fg-muted hover:text-fg">
+                ← Memory stores
+              </Link>
+              {store.description && (
+                <span className="ml-3 text-fg-muted">· {store.description}</span>
+              )}
+              <span className="block text-fg-subtle text-xs font-mono mt-1">
+                {store.id} · /mnt/memory/{store.name}/
+                {store.archived_at && (
+                  <span className="ml-2 text-fg-muted">
+                    · archived {new Date(store.archived_at).toLocaleDateString()}
+                  </span>
+                )}
+              </span>
+            </>
+          }
+        />
+      }
+    >
+      <div className="px-4 md:px-8 lg:px-10">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)} aria-label="Memory store sections" className="mt-2">
+          <TabsList className="mb-6">
+            <TabsTrigger value="memories">Memories</TabsTrigger>
+            <TabsTrigger value="versions">Version history</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="memories">
+            <MemoriesPanel storeId={storeId} archived={!!store.archived_at} />
+          </TabsContent>
+          <TabsContent value="versions">
+            <VersionsPanel storeId={storeId} />
+          </TabsContent>
+          <TabsContent value="settings">
+            <SettingsPanel store={store} archived={!!store.archived_at} />
+          </TabsContent>
+        </Tabs>
       </div>
-
-      <TabsRoot value={tab} onValueChange={(v) => setTab(v as Tab)} aria-label="Memory store sections" className="mt-6">
-        <TabList className="mb-6">
-          <Tab value="memories">Memories</Tab>
-          <Tab value="versions">Version history</Tab>
-          <Tab value="settings">Settings</Tab>
-        </TabList>
-
-        <TabPanel value="memories">
-          <MemoriesPanel storeId={storeId} archived={!!store.archived_at} />
-        </TabPanel>
-        <TabPanel value="versions">
-          <VersionsPanel storeId={storeId} />
-        </TabPanel>
-        <TabPanel value="settings">
-          <SettingsPanel store={store} archived={!!store.archived_at} />
-        </TabPanel>
-      </TabsRoot>
     </Page>
   );
 }

@@ -1,7 +1,26 @@
 import { type ReactNode } from "react";
-import { Button } from "./Button";
+import { SearchIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
 import { EmptyState, type EmptyStateKind } from "./EmptyState";
 import { Page } from "./Page";
+import { PageHeader } from "./PageHeader";
 import { Pagination } from "./Pagination";
 import { Skeleton } from "./Skeleton";
 
@@ -14,7 +33,7 @@ interface Column<T> {
 }
 
 interface ListPageProps<T> {
-  /** Page title (rendered in `font-display`). */
+  /** Page title rendered in the sticky PageHeader. */
   title: string;
   /** Subtitle below the title — accepts ReactNode so callers can drop in
    *  inline `<code>` snippets, links, etc. (e.g. MemoryStoresList shows the
@@ -26,8 +45,8 @@ interface ListPageProps<T> {
   createLabel?: string;
   onCreate?: () => void;
 
-  /** Extra controls rendered to the LEFT of the create button in the
-   *  header row. Use for secondary CTAs like SkillsList's "ClawHub". */
+  /** Extra controls rendered alongside the create button (e.g. ClawHub on
+   *  SkillsList). */
   headerActions?: ReactNode;
 
   /** Built-in search input. Render only when `onSearchChange` is provided. */
@@ -40,9 +59,8 @@ interface ListPageProps<T> {
   showArchived?: boolean;
   onShowArchivedChange?: (v: boolean) => void;
 
-  /** Extra filter controls rendered alongside search/archived in the
-   *  controls row — e.g. an agent dropdown (SessionsList) or all/active
-   *  tabs (Environments, Vaults). */
+  /** Extra filter controls rendered alongside search/archived in the toolbar
+   *  row — e.g. an agent dropdown (SessionsList) or all/active tabs. */
   filters?: ReactNode;
 
   /** Standard table columns. Cell rendering is via `render` or, if absent,
@@ -67,18 +85,9 @@ interface ListPageProps<T> {
   onRowClick?: (item: T) => void;
   getRowKey: (item: T) => string;
 
-  /** Cursor pagination (mirrors useCursorList). When `onLoadMore` is set
-   *  and `hasMore` is true, a "Load more" footer is rendered below the
-   *  table; while `loadingMore` is true the button shows a loading state.
-   *  Mutually exclusive with paginated mode (`onPageChange`). */
-  hasMore?: boolean;
-  onLoadMore?: () => void;
-  loadingMore?: boolean;
-
-  /** Paginated mode (mirrors usePagedList). When `onPageChange` is set
+  /** Paginated mode driven by `usePagedList`. When `onPageChange` is set,
    *  the full Pagination component is rendered (numbered pages, page-size
-   *  selector, range info). Mutually exclusive with `hasMore` /
-   *  `onLoadMore`; if both are wired the load-more footer wins. */
+   *  selector, range info). */
   pageIndex?: number;
   pageSize?: number;
   hasNext?: boolean;
@@ -94,9 +103,14 @@ interface ListPageProps<T> {
 
 /**
  * Reusable list-page chrome shared across the console (Sessions, Agents,
- * Environments, etc.). Provides the standard header / controls row / table
- * shell / loading + empty states / cursor-paginated load-more so each page
- * only declares its columns and renderers.
+ * Environments, etc.). Provides:
+ *   - Sticky `PageHeader` (title + subtitle + create CTA).
+ *   - Sticky toolbar row inside the header — search, archived toggle,
+ *     custom filter slot.
+ *   - shadcn `Table` shell with a sticky `<thead>` that pins below the
+ *     PageHeader on scroll, so the column labels never disappear.
+ *   - Skeleton rows during loading, EmptyState when no data, Pagination
+ *     footer when the page list is wired up.
  *
  * Pages keep ownership of their modals — pass them via `children`. Any
  * truly per-page filter UI (tabs, dropdowns) goes through the `filters`
@@ -124,9 +138,6 @@ export function ListPage<T>({
   emptyIcon,
   onRowClick,
   getRowKey,
-  hasMore,
-  onLoadMore,
-  loadingMore,
   pageIndex,
   pageSize,
   hasNext,
@@ -136,214 +147,155 @@ export function ListPage<T>({
   onPageSizeChange,
   children,
 }: ListPageProps<T>) {
-  const hasControlsRow =
-    !!onSearchChange || !!onShowArchivedChange || !!filters;
+  const hasToolbar = !!onSearchChange || !!onShowArchivedChange || !!filters;
   const showCreate = !!onCreate && !!createLabel;
 
+  const actions =
+    headerActions || showCreate ? (
+      <>
+        {headerActions}
+        {showCreate && <Button onClick={onCreate}>{createLabel}</Button>}
+      </>
+    ) : undefined;
+
+  const toolbar = hasToolbar ? (
+    <>
+      {onSearchChange && (
+        <InputGroup className="w-full sm:w-64">
+          <InputGroupAddon>
+            <SearchIcon className="size-3.5 opacity-50" />
+          </InputGroupAddon>
+          <InputGroupInput
+            type="search"
+            value={searchValue ?? ""}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={searchPlaceholder ?? "Search..."}
+            autoComplete="off"
+            name="oma-list-search"
+          />
+        </InputGroup>
+      )}
+      {filters}
+      {onShowArchivedChange && (
+        <label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer select-none shrink-0">
+          <Checkbox
+            checked={showArchived ?? false}
+            onCheckedChange={(c) => onShowArchivedChange(c === true)}
+          />
+          Show archived
+        </label>
+      )}
+    </>
+  ) : undefined;
+
+  // Table head sticks directly below the PageHeader. PageHeader publishes
+  // its measured height to `--page-header-height` on documentElement via
+  // a ResizeObserver, so this offset stays correct when the toolbar row
+  // appears/disappears or the viewport reflows. Fallback to 0px if the
+  // var isn't set (table mounted before a PageHeader for some reason).
+  const tableHeadSticky = "sticky top-[var(--page-header-height,0px)] z-10";
+
   return (
-    <Page>
-      {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-3">
-        <div className="min-w-0">
-          <h1 className="font-display text-lg md:text-xl font-semibold tracking-tight text-fg truncate">
-            {title}
-          </h1>
-          <div className="text-sm text-fg-muted mt-0.5">{subtitle}</div>
+    <Page header={<PageHeader title={title} subtitle={subtitle} actions={actions} toolbar={toolbar} />}>
+      {loading ? (
+        <TableShell columns={columns} headSticky={tableHeadSticky}>
+          {/* Skeleton rows — clamped to 10 so empty workspaces don't
+              stretch a half-page of empty bars, same per-column padding as
+              the real table so the cell-grid alignment is identical on
+              load. Skeleton bar widths vary per column index to fake
+              content density (id columns shorter, name columns longer). */}
+          {Array.from({ length: Math.min(pageSize ?? 10, 10) }).map((_, rowIdx) => (
+            <TableRow key={`sk-${rowIdx}`}>
+              {columns.map((col, colIdx) => {
+                const widthClass = (() => {
+                  if (colIdx === 0) return rowIdx % 2 === 0 ? "w-[55%]" : "w-[42%]";
+                  if (colIdx === columns.length - 1)
+                    return rowIdx % 2 === 0 ? "w-[38%]" : "w-[48%]";
+                  return rowIdx % 3 === 0 ? "w-[85%]" : rowIdx % 3 === 1 ? "w-[72%]" : "w-[60%]";
+                })();
+                return (
+                  <TableCell key={col.key} className={col.className}>
+                    <Skeleton className={`h-3.5 ${widthClass}`} rounded="sm" />
+                  </TableCell>
+                );
+              })}
+            </TableRow>
+          ))}
+        </TableShell>
+      ) : data.length === 0 ? (
+        <div className="px-4 py-4 md:px-8 lg:px-10">
+          <EmptyState
+            title={emptyTitle}
+            body={emptySubtitle}
+            action={emptyAction}
+            kind={emptyKind}
+            icon={emptyIcon}
+            size="lg"
+          />
         </div>
-        {(headerActions || showCreate) && (
-          <div className="flex items-center gap-2 shrink-0">
-            {headerActions}
-            {showCreate && (
-              <Button onClick={onCreate}>{createLabel}</Button>
+      ) : (
+        <div className="px-4 md:px-8 lg:px-10">
+          <div className="border border-border rounded-lg overflow-hidden">
+            <TableShell columns={columns} headSticky={tableHeadSticky}>
+              {data.map((item) => (
+                <TableRow
+                  key={getRowKey(item)}
+                  onClick={onRowClick ? () => onRowClick(item) : undefined}
+                  className={onRowClick ? "cursor-pointer" : undefined}
+                >
+                  {columns.map((col) => (
+                    <TableCell key={col.key} className={col.className}>
+                      {col.render
+                        ? col.render(item)
+                        : String((item as Record<string, unknown>)[col.key] ?? "")}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableShell>
+            {onPageChange && onPageSizeChange && (
+              <Pagination
+                pageIndex={pageIndex ?? 0}
+                pageSize={pageSize ?? 20}
+                hasNext={hasNext ?? false}
+                knownPages={knownPages ?? 1}
+                itemCount={data.length}
+                pageSizeOptions={pageSizeOptions}
+                loading={loading}
+                onPageChange={onPageChange}
+                onPageSizeChange={onPageSizeChange}
+              />
             )}
           </div>
-        )}
-      </div>
-
-      {/* Controls row */}
-      {hasControlsRow && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mb-4">
-          {onSearchChange && (
-            <div className="relative w-full sm:w-auto">
-              <svg
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-subtle"
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="search"
-                value={searchValue ?? ""}
-                onChange={(e) => onSearchChange(e.target.value)}
-                placeholder={searchPlaceholder ?? "Search..."}
-                className="border border-border rounded-md pl-8 pr-3 py-1.5 min-h-11 sm:min-h-0 text-sm bg-bg text-fg placeholder:text-fg-subtle focus:border-brand focus:outline-none transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)] w-full sm:w-64"
-                autoComplete="off"
-                name="oma-list-search"
-              />
-            </div>
-          )}
-
-          {filters}
-
-          {onShowArchivedChange && (
-            <label className="flex items-center gap-2 min-h-11 sm:min-h-0 text-sm text-fg-muted cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showArchived ?? false}
-                onChange={(e) => onShowArchivedChange(e.target.checked)}
-                className="w-4 h-4 rounded accent-brand"
-              />
-              Show archived
-            </label>
-          )}
-        </div>
-      )}
-
-      {/* Table / loading / empty */}
-      {loading ? (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-bg-surface text-fg-subtle text-xs font-medium uppercase tracking-wider">
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className={`text-left px-4 py-2.5 ${col.className ?? ""}`}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {/* Skeleton rows — same row count as the active page size
-                    (clamped to 10 so empty workspaces don't stretch a
-                    half-page of empty bars), same per-column padding as
-                    the real table so the cell-grid alignment is identical
-                    on load. Skeleton bar widths vary per column index to
-                    fake content density (id columns shorter, name columns
-                    longer) so it doesn't read as a uniform stripe. */}
-                {Array.from({ length: Math.min(pageSize ?? 10, 10) }).map((_, rowIdx) => (
-                  <tr
-                    key={`sk-${rowIdx}`}
-                    className="border-t border-border"
-                  >
-                    {columns.map((col, colIdx) => {
-                      // Vary skeleton width per column position: first col
-                      // (often id) ~40-60%, middle cols 70-90%, last cols
-                      // (timestamps / actions) ~30-50%. Add tiny per-row
-                      // jitter via (rowIdx + colIdx) so each row reads as
-                      // distinct content.
-                      const widthClass = (() => {
-                        if (colIdx === 0) return rowIdx % 2 === 0 ? "w-[55%]" : "w-[42%]";
-                        if (colIdx === columns.length - 1) return rowIdx % 2 === 0 ? "w-[38%]" : "w-[48%]";
-                        return rowIdx % 3 === 0 ? "w-[85%]" : rowIdx % 3 === 1 ? "w-[72%]" : "w-[60%]";
-                      })();
-                      return (
-                        <td
-                          key={col.key}
-                          className={`px-4 py-3 ${col.className ?? ""}`}
-                        >
-                          <Skeleton className={`h-3.5 ${widthClass}`} rounded="sm" />
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : data.length === 0 ? (
-        <EmptyState
-          title={emptyTitle}
-          body={emptySubtitle}
-          action={emptyAction}
-          kind={emptyKind}
-          icon={emptyIcon}
-          size="lg"
-        />
-      ) : (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-bg-surface text-fg-subtle text-xs font-medium uppercase tracking-wider">
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      className={`text-left px-4 py-2.5 ${col.className ?? ""}`}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((item) => (
-                  <tr
-                    key={getRowKey(item)}
-                    onClick={onRowClick ? () => onRowClick(item) : undefined}
-                    className={`border-t border-border transition-[background-color] duration-[var(--dur-quick)] ease-[var(--ease-soft)] ${
-                      onRowClick
-                        ? "hover:bg-bg-surface cursor-pointer"
-                        : "hover:bg-bg-surface"
-                    }`}
-                  >
-                    {columns.map((col) => (
-                      <td
-                        key={col.key}
-                        className={`px-4 py-3 ${col.className ?? ""}`}
-                      >
-                        {col.render
-                          ? col.render(item)
-                          : String(
-                              (item as Record<string, unknown>)[col.key] ?? "",
-                            )}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {hasMore && onLoadMore ? (
-            <div className="flex justify-center border-t border-border bg-bg-surface py-3">
-              <button
-                onClick={onLoadMore}
-                disabled={loadingMore}
-                className="inline-flex items-center justify-center px-3 min-h-11 sm:min-h-0 text-sm text-fg-muted hover:text-fg disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-[var(--dur-quick)] ease-[var(--ease-soft)]"
-              >
-                {loadingMore ? "Loading…" : "Load more"}
-              </button>
-            </div>
-          ) : onPageChange && onPageSizeChange ? (
-            <Pagination
-              pageIndex={pageIndex ?? 0}
-              pageSize={pageSize ?? 20}
-              hasNext={hasNext ?? false}
-              knownPages={knownPages ?? 1}
-              itemCount={data.length}
-              pageSizeOptions={pageSizeOptions}
-              loading={loading}
-              onPageChange={onPageChange}
-              onPageSizeChange={onPageSizeChange}
-            />
-          ) : null}
         </div>
       )}
 
       {children}
     </Page>
+  );
+}
+
+interface TableShellProps<T> {
+  columns: Column<T>[];
+  headSticky: string;
+  children: ReactNode;
+}
+
+function TableShell<T>({ columns, headSticky, children }: TableShellProps<T>) {
+  return (
+    <Table>
+      <TableHeader
+        className={`${headSticky} bg-bg-surface text-fg-subtle text-xs font-medium uppercase tracking-wider`}
+      >
+        <TableRow>
+          {columns.map((col) => (
+            <TableHead key={col.key} className={col.className}>
+              {col.label}
+            </TableHead>
+          ))}
+        </TableRow>
+      </TableHeader>
+      <TableBody>{children}</TableBody>
+    </Table>
   );
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useApi } from "../lib/api";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { ListPage } from "../components/ListPage";
 
 interface ApiKey {

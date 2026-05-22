@@ -2,13 +2,13 @@ import { useEffect, useState, useCallback } from "react";
 import { useApi } from "../lib/api";
 import { usePagedList } from "../lib/usePagedList";
 import { Modal } from "../components/Modal";
-import { Button } from "../components/Button";
+import { Button } from "@/components/ui/button";
 import { ListPage } from "../components/ListPage";
 import { TextInput, SecretInput } from "../components/Input";
 import { LocalCombobox } from "../components/LocalCombobox";
 import { Disclosure } from "../components/Disclosure";
-import { TabsRoot, TabList, Tab, TabPanel } from "../components/Tabs";
-import { useToast } from "../components/Toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import { MCP_REGISTRY, type McpRegistryEntry } from "../data/mcp-registry";
 
 interface Vault { id: string; name: string; created_at: string; archived_at?: string; }
@@ -41,7 +41,6 @@ const CAP_CLIS: Array<{ cli_id: string; label: string; helper: string; oauth?: b
 
 export function VaultsList() {
   const { api } = useApi();
-  const { toast } = useToast();
   const [showCreateVault, setShowCreateVault] = useState(false);
   const [vaultName, setVaultName] = useState("");
 
@@ -168,13 +167,12 @@ export function VaultsList() {
       // enable it here: <url>") so the user has actionable next-step text.
       const svc = data.service ?? "MCP server";
       if (data.probe_ok === true) {
-        toast?.(`Connected to ${svc} — token verified.`, "success");
+        toast.success(`Connected to ${svc} — token verified.`);
       } else if (data.probe_ok === false) {
-        toast?.(
+        toast.warning(
           data.probe_message
             ? `Connected to ${svc}, but: ${data.probe_message}`
             : `Connected to ${svc}, but the server rejected our token.`,
-          "warning",
         );
       }
     }
@@ -487,7 +485,7 @@ export function VaultsList() {
         maxWidth="max-w-2xl"
         footer={
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => { setAddTab("mcp"); setShowAddCred(true); }}>+ Add credential</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAddTab("mcp"); setShowAddCred(true); }}>+ Add credential</Button>
             <div className="flex-1" />
             <Button variant="ghost" onClick={() => setSelectedVault(null)}>Close</Button>
           </div>
@@ -570,17 +568,17 @@ export function VaultsList() {
           )
         }
       >
-        <TabsRoot
+        <Tabs
           value={addTab}
           onValueChange={(v) => setAddTab(v as "mcp" | "cli")}
           aria-label="Add credential"
         >
-          <TabList className="mb-3">
-            <Tab value="mcp" compact>MCP server</Tab>
-            <Tab value="cli" compact>CLI</Tab>
-          </TabList>
+          <TabsList className="mb-3">
+            <TabsTrigger value="mcp">MCP server</TabsTrigger>
+            <TabsTrigger value="cli">CLI</TabsTrigger>
+          </TabsList>
 
-          <TabPanel value="mcp" className="space-y-4">
+          <TabsContent value="mcp" className="space-y-4">
             <div className="text-sm text-fg-muted">Authorize an MCP server for delegated user authentication.</div>
 
             <div>
@@ -766,9 +764,9 @@ export function VaultsList() {
                 </div>
               </Disclosure>
             )}
-          </TabPanel>
+          </TabsContent>
 
-          <TabPanel value="cli" className="space-y-3">
+          <TabsContent value="cli" className="space-y-3">
             <div>
               <label htmlFor="vault-cli-id" className="text-sm text-fg-muted block mb-1">CLI</label>
               <select
@@ -790,7 +788,7 @@ export function VaultsList() {
             {CAP_CLIS.find((c) => c.cli_id === cliForm.cli_id)?.oauth && (
               <div className="border border-border rounded-md p-3 bg-bg-surface">
                 {!deviceFlow && (
-                  <Button variant="secondary" size="sm" onClick={startDeviceFlow}>
+                  <Button variant="outline" size="sm" onClick={startDeviceFlow}>
                     Sign in via {cliForm.cli_id} OAuth
                   </Button>
                 )}
@@ -838,8 +836,8 @@ export function VaultsList() {
                 disabled={deviceFlow?.status === "polling"}
               />
             </div>
-          </TabPanel>
-        </TabsRoot>
+          </TabsContent>
+        </Tabs>
       </Modal>
 
     </ListPage>

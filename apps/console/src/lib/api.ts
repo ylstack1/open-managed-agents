@@ -1,24 +1,79 @@
 const BASE = "";
 
 import { useCallback, useMemo } from "react";
-import { useToast } from "../components/Toast";
+import { toast } from "sonner";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 
-/** Parse an error message out of an API response body. The server now emits
- *  the Anthropic-compatible envelope `{type:"error", error:{type, message},
- *  request_id}`; older endpoints (and external callers) may still return the
- *  legacy `{error: "<string>"}`. Handle both so toasts render a real message
- *  in either case. */
-export function readApiErrorMessage(body: unknown, status: number): string {
+/**
+ * Server error envelope after the Anthropic-compatible migration:
+ *   { type: "error", error: { type, message }, request_id? }
+ * Older endpoints still emit the bare-string shape `{ error: "<string>" }`,
+ * which we read defensively in `readApiError`.
+ */
+interface ApiErrorBody {
+  type?: "error";
+  error?:
+    | string
+    | {
+        type?: string;
+        message?: string;
+      };
+  request_id?: string;
+}
+
+export interface ApiErrorInfo {
+  /** Stable error code from the server, e.g. `"not_a_member"`. Empty
+   *  string when the response only carried a message. */
+  code: string;
+  /** Human-readable message, suitable for toasts. Falls back to
+   *  `HTTP <status>` when the body had nothing usable. */
+  message: string;
+}
+
+/** Parse `{code, message}` out of an API response body. Handles both the
+ *  current Anthropic-style envelope and the legacy bare-string shape so
+ *  callers can dispatch on `code` (stable wire-format identifier) without
+ *  ever string-matching the human message. */
+export function readApiError(body: unknown, status: number): ApiErrorInfo {
   if (body && typeof body === "object") {
-    const e = (body as { error?: unknown }).error;
-    if (typeof e === "string") return e;
+    const e = (body as ApiErrorBody).error;
+    if (typeof e === "string") return { code: "", message: e };
     if (e && typeof e === "object") {
-      const m = (e as { message?: unknown }).message;
-      if (typeof m === "string") return m;
+      return {
+        code: typeof e.type === "string" ? e.type : "",
+        message: typeof e.message === "string" ? e.message : `HTTP ${status}`,
+      };
     }
   }
-  return `HTTP ${status}`;
+  return { code: "", message: `HTTP ${status}` };
+}
+
+/** Back-compat wrapper for the older message-only callers (readApiErrorMessage
+ *  was the single export before the `code` channel existed). New code should
+ *  reach for `readApiError` and use `code` for dispatch. */
+export function readApiErrorMessage(body: unknown, status: number): string {
+  return readApiError(body, status).message;
+}
+
+/**
+ * Structured API error. Replaces the previous `Error & { status?: number }`
+ * property-extension trick — callers branch on `err instanceof ApiError`
+ * and then read `status` / `code` rather than poking at an Error object's
+ * tacked-on properties (which break under structuredClone, Error
+ * subclassing, and most error-reporting libraries).
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly requestId?: string;
+
+  constructor(info: ApiErrorInfo & { status: number; requestId?: string }) {
+    super(info.message);
+    this.name = "ApiError";
+    this.status = info.status;
+    this.code = info.code;
+    this.requestId = info.requestId;
+  }
 }
 
 /** localStorage key for the active tenant the Console wants to operate as.
@@ -57,16 +112,15 @@ function shouldSilenceAuthError(path: string, status: number): boolean {
 }
 
 export function useApi() {
-  const { toast } = useToast();
-
-  // `api` and `streamEvents` are wrapped in useCallback with `[toast]` as the
-  // sole dep so a render of any consumer doesn't produce a fresh closure.
+  // `api` and `streamEvents` are wrapped in useCallback with an empty dep
+  // list so a render of any consumer doesn't produce a fresh closure.
   // Before this, every component calling `useApi()` got new function identities
   // each render — including them in a `useEffect` dep array would loop the
   // effect, so callers had to either omit `api` (eslint-disable) or stash it
   // in a ref. With these stable refs, `useApiQuery` / `useInfiniteApiQuery` /
   // `useEffect([id])` can include `api` cleanly without retriggering.
-  // `toast` itself is stable (Toast.tsx wraps it in useCallback([], [])).
+  // `toast` is imported from sonner at module scope; the module-level
+  // function reference is stable across renders.
   const api = useCallback(
     async function api<T = unknown>(
       path: string,
@@ -101,13 +155,14 @@ export function useApi() {
           // User-facing toast: skip the METHOD path: prefix (debug noise);
           // log the full thing to console for dev triage.
           console.error(`[api] ${(init?.method || "GET")} ${path}: ${msg}`);
-          toast(`Network error: ${msg}`, "error");
+          toast.error(`Network error: ${msg}`);
         }
         throw err;
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        const message = readApiErrorMessage(body, res.status);
+        const info = readApiError(body, res.status);
+        const requestId = (body as { request_id?: unknown })?.request_id;
 
         // Safety net for stale-tenant lockout. The primary fix is in Login.tsx
         // (clears localStorage on every successful auth transition). This still
@@ -118,21 +173,23 @@ export function useApi() {
         //     logged in
         //   - Cross-domain edge cases where localStorage carries over via
         //     extension / shared profile sync
-        // Reload-loop guard prevents bouncing if 403 is from some unrelated
-        // membership check (e.g. POST /v1/me/cli-tokens with an explicit body
-        // tenant_id that's not ours).
+        // Dispatch on the stable wire-format code (`not_a_member`) rather
+        // than the human message — the backend emits this from auth.ts /
+        // http-routes/tenants/index.ts / apps/main/src/auth.ts via the
+        // Anthropic-style envelope. Reload-loop guard prevents bouncing if
+        // 403 is from some unrelated membership check.
         if (
           res.status === 403 &&
           activeTenant &&
-          message.includes("Not a member") &&
+          info.code === "not_a_member" &&
           !sessionStorage.getItem("oma_tenant_self_heal")
         ) {
           sessionStorage.setItem("oma_tenant_self_heal", "1");
           setActiveTenantId(null);
-          toast("Reset stored workspace pin (was unrecognized) — reloading", "info");
+          toast.info("Reset stored workspace pin (was unrecognized) — reloading");
           // Give the toast a tick to render before navigation.
           setTimeout(() => location.reload(), 250);
-          throw new Error(message);
+          throw new ApiError({ ...info, status: res.status });
         }
 
         // Surface non-OK responses to the user. Silently dropped errors had us
@@ -145,21 +202,21 @@ export function useApi() {
         // leaked debug info into UX. Path + status still go to console for
         // dev triage.
         if (!shouldSilenceAuthError(path, res.status)) {
-          console.error(`[api] ${res.status} ${path}: ${message}`);
-          toast(message, "error");
+          console.error(`[api] ${res.status} ${path}: ${info.message}`);
+          toast.error(info.message);
         }
-        // Attach status so callers can branch on specific cases
-        // (e.g. SessionsList redirects to /billing on 402).
-        const e = new Error(message) as Error & { status?: number };
-        e.status = res.status;
-        throw e;
+        throw new ApiError({
+          ...info,
+          status: res.status,
+          requestId: typeof requestId === "string" ? requestId : undefined,
+        });
       }
       // Successful response — clear the self-heal sentinel so a future stale
       // tenant can self-heal again later in the same browser session.
       sessionStorage.removeItem("oma_tenant_self_heal");
       return res.json() as Promise<T>;
     },
-    [toast],
+    [],
   );
 
   const streamEvents = useCallback(
@@ -225,7 +282,7 @@ export function useApi() {
             // so the user sees a real error message instead of silence.
             const body = await response.json().catch(() => ({}));
             const message = readApiErrorMessage(body, response.status);
-            toast(`/v1/sessions/${sessionId}/events/stream: ${message}`, "error");
+            toast.error(`/v1/sessions/${sessionId}/events/stream: ${message}`);
             // Non-retriable: 401/403/404 won't fix themselves on retry, and
             // hammering a 5xx that's surfaced to the user is also pointless.
             // FatalError signals onerror to stop the loop.
@@ -267,7 +324,7 @@ export function useApi() {
           consecutiveFailures += 1;
           if (consecutiveFailures === 5 && !reconnectToastShown) {
             reconnectToastShown = true;
-            toast("Reconnecting…", "info");
+            toast.info("Reconnecting…");
           }
           const idx = Math.min(consecutiveFailures - 1, backoffMs.length - 1);
           return backoffMs[idx];
@@ -278,7 +335,7 @@ export function useApi() {
         // is caller-initiated cleanup. Nothing more to do.
       });
     },
-    [toast],
+    [],
   );
 
   return useMemo(() => ({ api, streamEvents }), [api, streamEvents]);
