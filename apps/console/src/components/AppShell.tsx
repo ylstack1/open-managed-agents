@@ -162,9 +162,12 @@ export function AppShell() {
 
             {/* Rounded panel — top-left rounded only so it visually fuses
                 with the sidebar on its left and the viewport edge on the
-                right/bottom. Hosts the per-page header slot (sticky by
-                construction) + scrollable main. */}
-            <div className="flex-1 min-h-0 rounded-tl-lg border-t border-l border-border bg-bg flex flex-col overflow-hidden">
+                right/bottom. NO border: the bg-bg / bg-sidebar contrast
+                draws the seam by itself, and `border-l border-t` here
+                rendered as a visible dark hairline along the seam +
+                a darker notch at the rounded corner. Hosts the per-page
+                header slot (sticky by construction) + scrollable main. */}
+            <div className="flex-1 min-h-0 rounded-tl-lg bg-bg flex flex-col overflow-hidden">
               <div
                 ref={setPageHeaderSlot}
                 className="empty:hidden shrink-0 border-b border-border"
