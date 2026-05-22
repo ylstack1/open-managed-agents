@@ -1,4 +1,5 @@
-import { useMatches, type UIMatch } from "react-router";
+import { Fragment } from "react";
+import { useLocation } from "react-router";
 import { ChevronRightIcon } from "lucide-react";
 
 import {
@@ -11,31 +12,16 @@ import {
 } from "@/components/ui/breadcrumb";
 
 /**
- * Crumb shape exposed by route handles. Pages can publish a static label
- * via the route definition or a dynamic one via the loader/match data;
- * this header reads `match.handle.crumb` first, falling back to the URL
- * segment if a route doesn't declare one. Pure derivation, no global
- * registry to fall out of sync.
+ * Path-segment fallback when the URL doesn't map to a known top-level
+ * route. Unknown segments fall back to start-cased text; the "" empty
+ * segment for "/" is filtered out earlier.
  *
- *     // in routes
- *     {
- *       path: "agents",
- *       handle: { crumb: "Agents" },
- *       element: <AgentsList />,
- *     }
- */
-export interface RouteCrumb {
-  label: string;
-  /** When set, render as a link to this path instead of plain text. */
-  to?: string;
-}
-
-type CrumbHandle = { crumb?: string | ((m: UIMatch) => RouteCrumb | string | null) };
-
-/**
- * Path-segment fallback when a route doesn't declare its own crumb.
- * Maps known top-level routes to friendly names; unknown segments fall
- * back to start-cased text. Hides the implicit "" segment for "/".
+ * (Earlier draft used react-router's `useMatches()` to read per-route
+ * `handle.crumb` overrides, but that hook is data-router-only and the
+ * console mounts under `<BrowserRouter>` + declarative `<Routes>`, so
+ * it throws at runtime: "useMatches must be used within a data router".
+ * Until/unless we migrate main.tsx to `createBrowserRouter` +
+ * `<RouterProvider>`, breadcrumbs derive purely from the URL.)
  */
 const FALLBACK_LABELS: Record<string, string> = {
   agents: "Agents",
@@ -53,6 +39,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   linear: "Linear",
   github: "GitHub",
   slack: "Slack",
+  billing: "Billing",
 };
 
 function titleize(seg: string): string {
@@ -65,39 +52,21 @@ function titleize(seg: string): string {
 }
 
 /**
- * AppShell breadcrumb — derives crumbs from the active route chain.
- *
- *   - Skips the root "/" match (handled by the brand + sidebar).
- *   - Resource detail routes (`/sessions/:id`) show the raw id when the
- *     route doesn't override via `handle.crumb`; pages with their own
- *     name (e.g. agent display name) should set
- *     `handle: { crumb: (m) => ({ label: m.data.name }) }`.
- *   - Last crumb is plain text (`BreadcrumbPage`), preceding ones are
- *     links back to that level.
+ * AppShell breadcrumb. Splits the current pathname into cumulative
+ * crumbs ("/sessions/abc123" → [Sessions, abc123]) and renders them in
+ * the top toolbar. Hidden on the root path because the brand already
+ * identifies the workspace there.
  */
 export function AppBreadcrumb() {
-  const matches = useMatches();
+  const { pathname } = useLocation();
 
-  // Strip the root match — covered by the brand. Map remaining matches
-  // to crumbs, deriving from handle.crumb or URL fallback.
-  const crumbs = matches
-    .filter((m) => m.pathname !== "/")
-    .map((m) => {
-      const handle = (m.handle ?? {}) as CrumbHandle;
-      const raw = typeof handle.crumb === "function" ? handle.crumb(m) : handle.crumb;
-      if (raw) {
-        const c = typeof raw === "string" ? { label: raw } : raw;
-        return { label: c.label, to: c.to ?? m.pathname };
-      }
-      // URL fallback: take the last non-empty path segment.
-      const segs = m.pathname.split("/").filter(Boolean);
-      const last = segs[segs.length - 1];
-      if (!last) return null;
-      return { label: titleize(last), to: m.pathname };
-    })
-    .filter((c): c is { label: string; to: string } => c !== null);
+  const segs = pathname.split("/").filter(Boolean);
+  if (segs.length === 0) return null;
 
-  if (crumbs.length === 0) return null;
+  const crumbs = segs.map((seg, i) => ({
+    label: titleize(seg),
+    to: "/" + segs.slice(0, i + 1).join("/"),
+  }));
 
   return (
     <ShadcnBreadcrumb>
@@ -105,7 +74,7 @@ export function AppBreadcrumb() {
         {crumbs.map((c, i) => {
           const isLast = i === crumbs.length - 1;
           return (
-            <span key={c.to} className="contents">
+            <Fragment key={c.to}>
               {i > 0 && (
                 <BreadcrumbSeparator>
                   <ChevronRightIcon className="size-3.5" />
@@ -118,7 +87,7 @@ export function AppBreadcrumb() {
                   <BreadcrumbLink href={c.to}>{c.label}</BreadcrumbLink>
                 )}
               </BreadcrumbItem>
-            </span>
+            </Fragment>
           );
         })}
       </BreadcrumbList>
