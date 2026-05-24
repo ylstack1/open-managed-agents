@@ -92,13 +92,12 @@ function computePresetRange(
   }
 }
 
-/** Compact filter trigger that lives in the toolbar alongside the
- *  primary CTA and search input. Shape and height are intentionally
- *  identical to shadcn `Button` (h-9, rounded-md, border-border), so
- *  the whole row reads as one visual family — the `+ New` primary
- *  button, the chips, and the search box on the right all share the
- *  same baseline + corner radius. Active state stays subtle: brand
- *  text + a `bg-brand-subtle` wash, no pill silhouette change. */
+/** Compact chip-style filter trigger. Decoration follows selection,
+ *  same principle as the sidebar nav: nothing visible at rest, only
+ *  the actually-selected chip gets the brand pill outline + bg. Idle
+ *  chips are bare `label ▾` text so an empty filter row visually
+ *  weighs nothing; the toolbar reads as "nothing's filtered" without
+ *  having to scan every chip for a value. */
 function FilterChip({
   label,
   active,
@@ -116,24 +115,25 @@ function FilterChip({
     <Popover>
       <div
         className={cn(
-          "inline-flex items-center h-9 rounded-md border text-sm shrink-0 transition-colors overflow-hidden",
+          "inline-flex items-center gap-1 h-8 text-sm shrink-0 transition-colors",
           active
-            ? "border-brand/40 text-brand bg-brand-subtle"
-            : "border-border text-fg hover:bg-bg-surface bg-transparent",
+            ? "rounded-full border border-brand text-brand bg-brand-subtle"
+            : "text-fg-muted hover:text-fg",
         )}
       >
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 px-3 h-full"
+            className={cn(
+              "inline-flex items-center gap-1 h-full",
+              active ? "pl-3 pr-2" : "px-2",
+            )}
           >
-            <span className={cn(active ? "font-medium" : "text-fg-muted")}>
-              {label}
-            </span>
+            <span className="font-medium">{label}</span>
             {display && (
               <>
-                <span className="text-fg-subtle">·</span>
-                <span className="font-medium">{display}</span>
+                <span className="text-fg-subtle">:</span>
+                <span>{display}</span>
               </>
             )}
             {!active && <ChevronDownIcon className="size-3.5 opacity-60" />}
@@ -146,10 +146,10 @@ function FilterChip({
               e.stopPropagation();
               onClear();
             }}
-            className="inline-flex items-center justify-center w-7 h-full border-l border-brand/20 hover:bg-brand/10"
+            className="inline-flex items-center justify-center size-5 mr-1.5 rounded-full hover:bg-brand/10"
             aria-label={`Clear ${label} filter`}
           >
-            <XIcon className="size-3.5" />
+            <XIcon className="size-3" />
           </button>
         )}
       </div>
