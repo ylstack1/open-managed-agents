@@ -267,7 +267,7 @@ export function DataTable<T>({
       {loading ? (
         <SkeletonRows colSpan={visibleColumnCount} />
       ) : isEmpty ? (
-        <div className="px-4 py-4 md:px-8 lg:px-10">
+        <div className="px-2 py-4">
           <EmptyState
             title={emptyTitle}
             body={emptySubtitle}
@@ -278,7 +278,7 @@ export function DataTable<T>({
           />
         </div>
       ) : (
-        <div className="px-4 md:px-8 lg:px-10">
+        <div className="px-2">
           {/* Body table: zebra-striped rows, no inter-row borders, no
               outer card frame. Cleaner than the pill recipe — matches
               the reference design where rows alternate a subtle bg
@@ -458,7 +458,7 @@ function ColumnVisibilityMenu<T>({ table }: { table: TanstackTable<T> }) {
  *  across both list variants. */
 function SkeletonRows({ colSpan }: { colSpan: number }) {
   return (
-    <div className="px-4 md:px-8 lg:px-10">
+    <div className="px-2">
       <Table>
         <TableBody>
           {Array.from({ length: 10 }).map((_, rowIdx) => (

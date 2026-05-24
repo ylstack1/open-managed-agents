@@ -214,7 +214,7 @@ export function ListPage<T>({
           ))}
         </TableShell>
       ) : data.length === 0 ? (
-        <div className="px-4 py-4 md:px-8 lg:px-10">
+        <div className="px-2 py-4">
           <EmptyState
             title={emptyTitle}
             body={emptySubtitle}
@@ -225,7 +225,7 @@ export function ListPage<T>({
           />
         </div>
       ) : (
-        <div className="px-4 md:px-8 lg:px-10">
+        <div className="px-2">
           <TableShell columns={columns} headSticky={tableHeadSticky}>
             {data.map((item) => (
               <TableRow

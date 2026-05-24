@@ -52,7 +52,7 @@ export function PageHeader({
   return createPortal(
     <div className={cn("bg-bg", className)}>
       {hasTopRow && (
-        <div className="flex items-start gap-4 px-4 py-3 md:px-8 lg:px-10">
+        <div className="flex items-start gap-4 px-2 py-3">
           <div className="min-w-0 flex-1">
             {title && (
               <h1 className="text-xl font-semibold tracking-tight truncate">
@@ -69,12 +69,12 @@ export function PageHeader({
         </div>
       )}
       {toolbar && (
-        <div className="flex items-center gap-2 px-4 py-3 md:px-8 lg:px-10 overflow-x-auto">
+        <div className="flex items-center gap-2 px-2 py-3 overflow-x-auto">
           {toolbar}
         </div>
       )}
       {tableHeader && (
-        <div className="px-4 md:px-8 lg:px-10 border-t border-border">
+        <div className="px-2 border-t border-border">
           {tableHeader}
         </div>
       )}
