@@ -29,6 +29,7 @@ import { FilesList } from "./pages/FilesList";
 import { EnvironmentsList } from "./pages/EnvironmentsList";
 import { EnvironmentDetail } from "./pages/EnvironmentDetail";
 import { VaultsList } from "./pages/VaultsList";
+import { VaultDetail } from "./pages/VaultDetail";
 import { SkillsList } from "./pages/SkillsList";
 import { MemoryStoresList } from "./pages/MemoryStoresList";
 import { MemoryStoreDetail } from "./pages/MemoryStoreDetail";
@@ -138,7 +139,18 @@ const protectedRoutes: RouteObject[] = [
     ],
   },
   { path: "skills", element: <SkillsList />, handle: { crumb: "Skills" } },
-  { path: "vaults", element: <VaultsList />, handle: { crumb: "Credential Vaults" } },
+  {
+    path: "vaults",
+    handle: { crumb: "Credential Vaults" },
+    children: [
+      { index: true, element: <VaultsList /> },
+      {
+        path: ":id",
+        element: <VaultDetail />,
+        handle: { crumb: (m: UIMatch) => (m.params.id as string | undefined) ?? "Vault" },
+      },
+    ],
+  },
   {
     path: "memory",
     handle: { crumb: "Memory Stores" },

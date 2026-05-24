@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { ArchiveIcon, TrashIcon } from "lucide-react";
 
 import { useApi } from "../lib/api";
 import { useInfiniteApiQuery } from "../lib/useApiQuery";
 import { DataTable, type ColumnDef } from "../components/DataTable";
 import { FacetedFilter } from "../components/FacetedFilter";
 import { FilterChip, CreatedFilterChip } from "../components/FilterChip";
+import { RowActionsMenu } from "../components/RowActionsMenu";
 import { Button } from "@/components/ui/button";
 import { PopoverContent } from "@/components/ui/popover";
 import type { ModelCard } from "@open-managed-agents/api-types";
@@ -182,8 +184,51 @@ export function AgentsList() {
           </span>
         ),
       },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => {
+          const a = row.original;
+          const archived = !!a.archived_at;
+          return (
+            <RowActionsMenu
+              label={`Actions for ${a.name}`}
+              actions={[
+                {
+                  label: archived ? "Unarchive" : "Archive",
+                  icon: <ArchiveIcon className="size-4" />,
+                  disabled: archived,
+                  onSelect: async () => {
+                    try {
+                      await api(`/v1/agents/${a.id}/archive`, {
+                        method: "POST",
+                        body: "{}",
+                      });
+                      refreshAgents();
+                    } catch {}
+                  },
+                },
+                {
+                  label: "Delete",
+                  icon: <TrashIcon className="size-4" />,
+                  destructive: true,
+                  onSelect: async () => {
+                    if (!confirm(`Delete ${a.name}? This can't be undone.`)) return;
+                    try {
+                      await api(`/v1/agents/${a.id}`, { method: "DELETE" });
+                      refreshAgents();
+                    } catch {}
+                  },
+                },
+              ]}
+            />
+          );
+        },
+        enableHiding: false,
+        size: 56,
+      },
     ],
-    [],
+    [api, refreshAgents],
   );
 
   // Active-filter chip displays — kept null when matching the default so

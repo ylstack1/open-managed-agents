@@ -1192,11 +1192,11 @@ export function SessionDetail() {
               inputs. Non-image attachments belong on the mount-based
               session resources path, not this button.
 
-              Wireless treatment: dropped the previous `border-t` and
-              instead tinted the wrapper with `bg-bg-surface/40`. The
-              fill change is what separates the composer from the
-              conversation above — no line needed. */}
-          <div className="px-4 sm:px-8 py-4 bg-bg-surface/40 shrink-0">
+              Wireless treatment: composer sits flush against the
+              conversation above on a `bg-bg` (white) surface — no
+              line, no top padding, just `pb-4` for breathing room
+              below. */}
+          <div className="px-4 sm:px-8 pb-4 bg-bg shrink-0">
             <PromptInput
               accept="image/*"
               multiple
