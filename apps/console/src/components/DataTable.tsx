@@ -59,7 +59,6 @@ import {
 } from "@/components/ui/table";
 
 import { EmptyState, type EmptyStateKind } from "./EmptyState";
-import { Page } from "./Page";
 import { PageHeader } from "./PageHeader";
 import { Skeleton } from "./Skeleton";
 import { cn } from "@/lib/utils";
@@ -233,7 +232,7 @@ export function DataTable<T>({
       {colgroup}
       <thead>
         {table.getHeaderGroups().map((headerGroup) => (
-          <tr key={headerGroup.id} className="border-b border-border">
+          <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => (
               <th
                 key={header.id}
@@ -258,17 +257,15 @@ export function DataTable<T>({
   ) : undefined;
 
   return (
-    <Page
-      header={
-        <PageHeader
-          title={title}
-          subtitle={subtitle}
-          actions={actions}
-          toolbar={toolbar}
-          tableHeader={frozenHeader}
-        />
-      }
-    >
+    <>
+      <PageHeader
+        title={title}
+        subtitle={subtitle}
+        actions={actions}
+        toolbar={toolbar}
+        tableHeader={frozenHeader}
+      />
+
       {loading ? (
         <SkeletonRows colSpan={visibleColumnCount} />
       ) : isEmpty ? (
@@ -283,10 +280,13 @@ export function DataTable<T>({
           />
         </div>
       ) : (
-        <div className="px-4 md:px-8 lg:px-10">
-          {/* Body table: same colgroup as the frozen header so columns
-              align. `border-separate border-spacing-y-1.5` turns each
-              <tr> into a pill (rounded ends, gap between rows). */}
+        <div className="px-4 md:px-8 lg:px-10 pb-4">
+          {/* Body sits flush against the frozen header in the slot —
+              no extra top padding so the gap between header and first
+              row is only the row pill's own `border-spacing-y-1.5`
+              (6 px). The scroll-shadow line on AppShell's
+              pageHeaderSlot is the only horizontal divider that
+              appears (only on scroll). */}
           <table className="w-full table-fixed border-separate border-spacing-y-1.5">
             {colgroup}
             <tbody>
@@ -298,9 +298,9 @@ export function DataTable<T>({
                     onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                     className={cn(
                       "bg-bg-surface/60 hover:bg-bg-surface transition-colors",
-                      "[&>td]:border-y [&>td]:border-border [&>td]:bg-transparent [&>td]:px-3 [&>td]:py-2 [&>td]:align-middle [&>td]:text-sm",
-                      "[&>td:first-child]:border-l [&>td:first-child]:rounded-l-lg",
-                      "[&>td:last-child]:border-r [&>td:last-child]:rounded-r-lg",
+                      "[&>td]:bg-transparent [&>td]:px-3 [&>td]:py-2 [&>td]:align-middle [&>td]:text-sm",
+                      "[&>td:first-child]:rounded-l-lg",
+                      "[&>td:last-child]:rounded-r-lg",
                       onRowClick && "cursor-pointer",
                     )}
                   >
@@ -325,7 +325,7 @@ export function DataTable<T>({
       )}
 
       {children}
-    </Page>
+    </>
   );
 }
 
