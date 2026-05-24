@@ -48,31 +48,26 @@ interface NavGroup {
   items: NavItem[];
 }
 
-/* ── Navigation groups — single source of truth for sidebar items ── */
+/* ── Nav groups — single source of truth for sidebar items.
+ *
+ * Only "Integrations" gets a visible group label. Everything else
+ * sits in one flat unlabeled group at the top — the sub-categories
+ * (Overview / Managed Agents / Infrastructure / Configuration) added
+ * vertical density without aiding scanability for a list this short.
+ * The Integrations group keeps its label because the three nested
+ * services (Linear / GitHub / Slack) genuinely benefit from being
+ * called out as "things that come from outside the system". ── */
 const navGroups: NavGroup[] = [
   {
-    label: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: DashboardIcon, end: true }],
-  },
-  {
-    label: "Managed Agents",
+    label: "",
     items: [
+      { to: "/", label: "Dashboard", icon: DashboardIcon, end: true },
       { to: "/agents", label: "Agents", icon: AgentIcon },
       { to: "/sessions", label: "Sessions", icon: SessionsIcon },
       { to: "/files", label: "Files", icon: FilesIcon },
       { to: "/evals", label: "Eval Runs", icon: SessionsIcon },
-    ],
-  },
-  {
-    label: "Infrastructure",
-    items: [
       { to: "/environments", label: "Environments", icon: EnvIcon },
       { to: "/vaults", label: "Credential Vaults", icon: VaultIcon },
-    ],
-  },
-  {
-    label: "Configuration",
-    items: [
       { to: "/skills", label: "Skills", icon: SkillsIcon },
       { to: "/memory", label: "Memory Stores", icon: MemoryIcon },
       { to: "/model-cards", label: "Model Cards", icon: ModelCardsIcon },
@@ -133,10 +128,10 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
 
-      <SidebarContent className="bg-sidebar">
+      <SidebarContent className="bg-sidebar no-scrollbar">
         {groups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup key={group.label || "_unlabeled"}>
+            {group.label && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((item) => {
