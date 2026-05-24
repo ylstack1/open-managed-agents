@@ -6,8 +6,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -110,8 +108,11 @@ const navGroups: NavGroup[] = [
 export function AppSidebar() {
   const { pathname } = useLocation();
 
-  const groups = useMemo(
-    () => [...navGroups, ...consolePlugins.flatMap((p) => p.navGroups ?? [])],
+  const items = useMemo(
+    () =>
+      [...navGroups, ...consolePlugins.flatMap((p) => p.navGroups ?? [])].flatMap(
+        (g) => g.items,
+      ),
     [],
   );
 
@@ -133,39 +134,39 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="bg-sidebar [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-        {groups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  const active = isItemActive(item.to, item.end);
-                  return (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={item.label}
-                        // Resting + hover stay transparent; ONLY the
-                        // active route paints the gray pill. Shadcn's
-                        // default applies bg-sidebar-accent on hover
-                        // too, which made every row look "interactive
-                        // for no reason" — Linear / Vercel / Notion
-                        // all keep hover quiet and reserve the fill
-                        // for the actually-selected item.
-                        className="hover:bg-transparent hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent"
-                      >
-                        <NavLink to={item.to} end={item.end}>
-                          <item.icon className="size-4 opacity-80" />
-                          <span>{item.label}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        {/* Flat nav — every item lives in ONE SidebarMenu with no
+            group wrappers. Inactive rows stay completely transparent
+            (no pill, no hover fill); only the active route gets the
+            gray bg-sidebar-accent pill. The `!` overrides on the
+            non-active background are necessary because Tailwind v4's
+            `data-active:` variant matches the attribute regardless of
+            value (true/false both fire), so shadcn's built-in
+            `data-active:bg-sidebar-accent` would otherwise paint every
+            row. */}
+        <SidebarMenu>
+          {items.map((item) => {
+            const active = isItemActive(item.to, item.end);
+            return (
+              <SidebarMenuItem key={item.to}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={active}
+                  tooltip={item.label}
+                  className={
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                      : "!bg-transparent hover:!bg-transparent !text-sidebar-foreground hover:!text-sidebar-foreground"
+                  }
+                >
+                  <NavLink to={item.to} end={item.end}>
+                    <item.icon className="size-4 opacity-80" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
       </SidebarContent>
 
       {/* Footer stacks tenant on top, user below. Both use the same

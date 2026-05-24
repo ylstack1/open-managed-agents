@@ -1,31 +1,21 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
   EyeIcon,
   EyeOffIcon,
-  FilterIcon,
   SearchIcon,
   SettingsIcon,
-  XIcon,
 } from "lucide-react";
 import {
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
   useReactTable,
   type ColumnDef,
-  type SortingState,
   type Table as TanstackTable,
-  type Column,
   type VisibilityState,
 } from "@tanstack/react-table";
 
@@ -39,12 +29,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
@@ -53,8 +37,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
-  TableHeader,
   TableRow,
 } from "@/components/ui/table";
 
@@ -64,26 +46,30 @@ import { Skeleton } from "./Skeleton";
 import { cn } from "@/lib/utils";
 
 /**
- * DataTable — Excel-like list page chrome.
+ * DataTable — list page chrome with a frozen, column-aligned header.
  *
  * Built on TanStack Table (headless) + shadcn `<Table>` primitives.
- * Replaces the simpler `<ListPage>` for pages that need:
+ * Used when a page wants:
  *
- *   - Click-header sorting (single + multi via shift-click).
- *   - Per-column filter from a header popover (Excel autofilter
- *     pattern) — text input for plain string columns.
- *   - Top toolbar with global search + a "Columns" dropdown for
- *     showing/hiding columns.
- *   - Sticky header (top-0 of <main>, pinned under PageHeader).
- *   - IntersectionObserver-driven load-more for infinite scroll
- *     (same API as ListPage — `hasMore` / `loadingMore` / `onLoadMore`).
+ *   - A header pinned outside the scroll container (Excel-style frozen
+ *     first row, never moves as the body scrolls).
+ *   - A toolbar with a server-side global search box, page-specific
+ *     filter chips, and a "Columns" dropdown for show/hide.
+ *   - IntersectionObserver-driven load-more for infinite scroll (same
+ *     API as ListPage — `hasMore` / `loadingMore` / `onLoadMore`).
  *
- * Caveat: sorting + per-column filter operate on CURRENTLY LOADED rows.
- * For full-corpus sort/filter the server endpoint would have to accept
- * the relevant query params and we'd lift this state into the query
- * key. Today's lists are cursor-paginated forward-only — operating on
- * loaded rows is the same trade-off Linear / Notion / Vercel make on
- * their large views.
+ * What DataTable deliberately does NOT do:
+ *
+ *   - **No click-header sorting.** Order is whatever the server returns
+ *     (today: `created_at DESC, id DESC` on cursor pages). Adding a
+ *     client-side sort over already-loaded rows is a lie when more
+ *     pages exist — the next page lands at the bottom in raw order.
+ *     If a list needs to be sorted differently, the server endpoint
+ *     decides; the UI doesn't pretend.
+ *   - **No per-column free-text filter popovers.** Same lie: a contains-
+ *     match on loaded rows hides the user's data without telling them.
+ *     Structured filters (enum, time bucket) belong in the toolbar
+ *     `filters` slot, where each page pushes them as real query params.
  */
 export interface DataTableProps<T> {
   /** Page title — usually omitted for list pages where AppBreadcrumb
@@ -104,13 +90,15 @@ export interface DataTableProps<T> {
   searchValue?: string;
   onSearchChange?: (v: string) => void;
 
-  /** Page-specific filter slot — tabs, archive toggle, etc. */
+  /** Page-specific filter slot — structured chips (status enum,
+   *  created-at bucket, agent dropdown). Pages own these and wire them
+   *  to real server query params, so the UI doesn't promise filtering
+   *  it can't deliver. */
   filters?: ReactNode;
 
   /** TanStack column definitions. Each column should set `id` (or
-   *  derive from `accessorKey`) so column visibility / filter state can
-   *  key by it. Use `enableSorting: false` / `enableColumnFilter: false`
-   *  to opt out per column. */
+   *  derive from `accessorKey`) so column visibility can key by it.
+   *  Use `enableHiding: false` to pin a column visible. */
   columns: ColumnDef<T, unknown>[];
   data: T[];
   getRowId: (item: T) => string;
@@ -157,19 +145,15 @@ export function DataTable<T>({
   loadingMore,
   children,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, columnVisibility },
-    onSortingChange: setSorting,
+    state: { columnVisibility },
     onColumnVisibilityChange: setColumnVisibility,
     getRowId: (row) => getRowId(row),
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
   });
 
   const showCreate = !!onCreate && !!createLabel;
@@ -236,14 +220,9 @@ export function DataTable<T>({
                 className="h-9 px-3 text-left text-xs font-medium align-middle whitespace-nowrap"
               >
                 {header.isPlaceholder ? null : (
-                  <div className="flex items-center gap-1">
-                    <SortableHeader column={header.column}>
-                      {flexRender(header.column.columnDef.header, header.getContext())}
-                    </SortableHeader>
-                    {header.column.getCanFilter() && (
-                      <ColumnFilterPopover column={header.column} />
-                    )}
-                  </div>
+                  <span className="font-medium">
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </span>
                 )}
               </th>
             ))}
@@ -320,89 +299,6 @@ export function DataTable<T>({
 
       {children}
     </>
-  );
-}
-
-/** Header content + ▲▼ sort indicator. Clicking toggles asc → desc →
- *  clear. Columns can opt out via `enableSorting: false`. */
-function SortableHeader<T>({
-  column,
-  children,
-}: {
-  column: Column<T, unknown>;
-  children: ReactNode;
-}) {
-  const canSort = column.getCanSort();
-  const sortDir = column.getIsSorted();
-
-  if (!canSort) return <span className="font-medium">{children}</span>;
-
-  const Icon =
-    sortDir === "asc" ? ArrowUpIcon : sortDir === "desc" ? ArrowDownIcon : ArrowUpDownIcon;
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        column.toggleSorting(undefined, e.shiftKey);
-      }}
-      className={cn(
-        "inline-flex items-center gap-1 font-medium hover:text-fg",
-        sortDir && "text-fg",
-      )}
-    >
-      {children}
-      <Icon className={cn("size-3", !sortDir && "opacity-40")} />
-    </button>
-  );
-}
-
-/** Excel-style per-column filter popover. Triggered by the funnel icon
- *  inside each filterable header. Text input filters via TanStack's
- *  default includesString matcher. */
-function ColumnFilterPopover<T>({ column }: { column: Column<T, unknown> }) {
-  const value = (column.getFilterValue() as string | undefined) ?? "";
-  const active = value.length > 0;
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          className={cn(
-            "inline-flex items-center justify-center size-5 rounded text-fg-subtle hover:bg-bg-surface hover:text-fg-muted",
-            active && "text-brand bg-brand-subtle hover:bg-brand-subtle hover:text-brand",
-          )}
-          aria-label={`Filter ${String(column.id)}`}
-        >
-          <FilterIcon className="size-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 p-2 space-y-2">
-        <div className="text-xs font-medium text-fg-muted px-1">
-          Filter {String(column.id)}
-        </div>
-        <Input
-          value={value}
-          onChange={(e) => column.setFilterValue(e.target.value)}
-          placeholder="Contains…"
-          autoFocus
-        />
-        {active && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => column.setFilterValue(undefined)}
-            className="w-full justify-start"
-          >
-            <XIcon className="size-3.5" />
-            Clear
-          </Button>
-        )}
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -515,7 +411,3 @@ function LoadMoreRow({
 
 // Re-export for caller-side column definitions.
 export { type ColumnDef } from "@tanstack/react-table";
-
-// Suppress unused-import lints — these are explicitly re-used by the
-// type-only `Column` import above for the helper signatures.
-void useMemo;
