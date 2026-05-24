@@ -173,23 +173,21 @@ export function DataTable<T>({
   });
 
   const showCreate = !!onCreate && !!createLabel;
-  const hasToolbar = !!onSearchChange || !!filters;
 
-  const actions =
-    headerActions || showCreate ? (
-      <>
-        {headerActions}
-        {showCreate && <Button onClick={onCreate}>{createLabel}</Button>}
-      </>
-    ) : undefined;
-
-  // Top toolbar — search on the left, filter chips next, columns
-  // dropdown pinned right. Columns dropdown reveals every column with
-  // a checkbox so users can hide/show without touching code.
+  // Single-row toolbar: [+ New X] on far left, page-specific filter
+  // chips next, then a flex spacer pushes [search] + [Columns] to the
+  // far right. Matches the LangSmith / Linear / Vercel pattern of one
+  // continuous action row above the table (no separate top-right
+  // "actions" zone). When there's no createCTA and no filters, the
+  // search box still right-aligns via `ml-auto`.
   const toolbar = (
     <>
+      {headerActions}
+      {showCreate && <Button onClick={onCreate}>{createLabel}</Button>}
+      {filters}
+      <div className="flex-1" />
       {onSearchChange && (
-        <InputGroup className="w-full sm:w-64">
+        <InputGroup className="w-full sm:w-64 shrink-0">
           <InputGroupAddon>
             <SearchIcon className="size-3.5 opacity-50" />
           </InputGroupAddon>
@@ -203,7 +201,6 @@ export function DataTable<T>({
           />
         </InputGroup>
       )}
-      {filters}
       <ColumnVisibilityMenu table={table} />
     </>
   );
@@ -259,9 +256,6 @@ export function DataTable<T>({
   return (
     <>
       <PageHeader
-        title={title}
-        subtitle={subtitle}
-        actions={actions}
         toolbar={toolbar}
         tableHeader={frozenHeader}
       />
@@ -269,7 +263,7 @@ export function DataTable<T>({
       {loading ? (
         <SkeletonRows colSpan={visibleColumnCount} />
       ) : isEmpty ? (
-        <div className="px-4 py-4 md:px-8 lg:px-10">
+        <div className="pl-2 pr-4 py-4">
           <EmptyState
             title={emptyTitle}
             body={emptySubtitle}
@@ -280,7 +274,7 @@ export function DataTable<T>({
           />
         </div>
       ) : (
-        <div className="px-4 md:px-8 lg:px-10 pb-4">
+        <div className="pl-2 pr-4 pb-4">
           {/* Body sits flush against the frozen header in the slot —
               no extra top padding so the gap between header and first
               row is only the row pill's own `border-spacing-y-1.5`
@@ -458,7 +452,7 @@ function ColumnVisibilityMenu<T>({ table }: { table: TanstackTable<T> }) {
  *  across both list variants. */
 function SkeletonRows({ colSpan }: { colSpan: number }) {
   return (
-    <div className="px-4 md:px-8 lg:px-10">
+    <div className="pl-2 pr-4">
       <Table>
         <TableBody>
           {Array.from({ length: 10 }).map((_, rowIdx) => (

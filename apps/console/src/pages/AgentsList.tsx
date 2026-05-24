@@ -174,7 +174,6 @@ export function AgentsList() {
 
   return (
     <DataTable<Agent>
-      subtitle="Create and manage autonomous agents."
       createLabel="+ New agent"
       onCreate={() => setShowCreate(true)}
       searchPlaceholder="Go to agent ID..."

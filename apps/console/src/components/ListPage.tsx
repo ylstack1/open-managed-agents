@@ -143,21 +143,30 @@ export function ListPage<T>({
   loadingMore,
   children,
 }: ListPageProps<T>) {
-  const hasToolbar = !!onSearchChange || !!onShowArchivedChange || !!filters;
   const showCreate = !!onCreate && !!createLabel;
 
-  const actions =
-    headerActions || showCreate ? (
-      <>
-        {headerActions}
-        {showCreate && <Button onClick={onCreate}>{createLabel}</Button>}
-      </>
-    ) : undefined;
-
-  const toolbar = hasToolbar ? (
+  // Single-row toolbar: [+ New X] far left → filter chips + archive
+  // toggle → spacer → [search] far right. Matches the LangSmith /
+  // Linear / Vercel single-row pattern. No top-right "actions" zone
+  // any more; the create CTA lives inline with the rest of the
+  // toolbar so the eye lands in one place.
+  const toolbar = (
     <>
+      {headerActions}
+      {showCreate && <Button onClick={onCreate}>{createLabel}</Button>}
+      {filters}
+      {onShowArchivedChange && (
+        <label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer select-none shrink-0">
+          <Checkbox
+            checked={showArchived ?? false}
+            onCheckedChange={(c) => onShowArchivedChange(c === true)}
+          />
+          Show archived
+        </label>
+      )}
+      <div className="flex-1" />
       {onSearchChange && (
-        <InputGroup className="w-full sm:w-64">
+        <InputGroup className="w-full sm:w-64 shrink-0">
           <InputGroupAddon>
             <SearchIcon className="size-3.5 opacity-50" />
           </InputGroupAddon>
@@ -171,18 +180,8 @@ export function ListPage<T>({
           />
         </InputGroup>
       )}
-      {filters}
-      {onShowArchivedChange && (
-        <label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer select-none shrink-0">
-          <Checkbox
-            checked={showArchived ?? false}
-            onCheckedChange={(c) => onShowArchivedChange(c === true)}
-          />
-          Show archived
-        </label>
-      )}
     </>
-  ) : undefined;
+  );
 
   // Sticky head pins to top of <main> (the scroll context). PageHeader
   // is rendered into a sibling slot ABOVE <main> via portal, so `top-0`
@@ -190,7 +189,7 @@ export function ListPage<T>({
   const tableHeadSticky = "sticky top-0 z-10";
 
   return (
-    <Page header={<PageHeader title={title} subtitle={subtitle} actions={actions} toolbar={toolbar} />}>
+    <Page header={<PageHeader toolbar={toolbar} />}>
       {loading ? (
         <TableShell columns={columns} headSticky={tableHeadSticky}>
           {/* Skeleton rows — clamped to 10 so empty workspaces don't
@@ -214,7 +213,7 @@ export function ListPage<T>({
           ))}
         </TableShell>
       ) : data.length === 0 ? (
-        <div className="px-4 py-4 md:px-8 lg:px-10">
+        <div className="pl-2 pr-4 py-4">
           <EmptyState
             title={emptyTitle}
             body={emptySubtitle}
@@ -225,7 +224,7 @@ export function ListPage<T>({
           />
         </div>
       ) : (
-        <div className="px-4 md:px-8 lg:px-10">
+        <div className="pl-2 pr-4">
           <TableShell columns={columns} headSticky={tableHeadSticky}>
             {data.map((item) => (
               <TableRow

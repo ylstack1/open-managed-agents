@@ -415,7 +415,6 @@ export function VaultsList() {
 
   return (
     <ListPage<Vault>
-      subtitle="Manage credentials for MCP servers and CLI tools."
       createLabel="+ New vault"
       onCreate={() => setShowCreateVault(true)}
       filters={tabs}

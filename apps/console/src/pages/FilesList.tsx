@@ -94,11 +94,6 @@ export function FilesList() {
 
   return (
     <ListPage<FileRecord>
-      subtitle={
-        <>
-          Tenant-scoped file storage (<code className="text-xs">/v1/files</code>). Used by agents for inputs, attachments, and session outputs.
-        </>
-      }
       searchPlaceholder="Filter loaded files by name…"
       searchValue={search}
       onSearchChange={setSearch}

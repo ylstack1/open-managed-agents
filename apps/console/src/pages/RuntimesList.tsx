@@ -64,17 +64,6 @@ export function RuntimesList() {
 
   return (
     <ListPage<Runtime>
-      subtitle={
-        <>
-          Your own laptops or servers, registered with OMA. Bind an agent to a runtime to run its turns
-          on your hardware via a local ACP child. OMA promotes <strong>Claude Code</strong>,
-          <strong> Codex</strong>, <strong>OpenClaw</strong>, and <strong>Hermes</strong> as featured;
-          the daemon also detects 30+ other agents from the
-          <a href="https://agentclientprotocol.com/get-started/registry" target="_blank" rel="noreferrer" className="underline hover:text-fg ml-1">
-            official ACP Registry
-          </a>.
-        </>
-      }
       createLabel="+ Connect machine"
       onCreate={() => setShowInstructions(true)}
       data={runtimes}

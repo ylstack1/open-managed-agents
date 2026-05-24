@@ -154,7 +154,6 @@ export function ModelCardsList() {
 
   return (
     <ListPage<ModelCard>
-      subtitle="Configure model providers, API keys, and endpoints."
       createLabel="+ New model card"
       onCreate={() => { setShowCreate(true); setError(""); }}
       data={cards}

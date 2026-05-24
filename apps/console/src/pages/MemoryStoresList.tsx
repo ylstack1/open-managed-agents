@@ -76,11 +76,6 @@ export function MemoryStoresList() {
 
   return (
     <ListPage<MemoryStore>
-      subtitle={
-        <>
-          Persistent memory for agents. Each store is mounted into a session at <code className="text-xs">/mnt/memory/&lt;name&gt;/</code>.
-        </>
-      }
       createLabel="+ New store"
       onCreate={() => { setShowCreate(true); setFormError(null); }}
       showArchived={includeArchived}

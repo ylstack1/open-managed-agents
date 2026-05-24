@@ -52,7 +52,6 @@ export function EnvironmentsList() {
 
   return (
     <ListPage<Env>
-      subtitle="Configure sandbox environments for agent sessions."
       createLabel="+ Add environment"
       onCreate={() => setShowCreate(true)}
       filters={tabs}
