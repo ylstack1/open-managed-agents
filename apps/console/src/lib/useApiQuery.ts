@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -92,6 +93,13 @@ export function useApiQuery<T>(
     enabled: (opts.enabled ?? true) && !!path,
     staleTime: opts.staleTime,
     refetchInterval: opts.refetchInterval,
+    // Stale-while-revalidate: when params change (filter chip, search,
+    // tenant switch), keep the previous result rendered while the new
+    // fetch runs in the background. Pages that read `isLoading` only see
+    // it true on a truly cold cache; subsequent param tweaks feel
+    // instant (no skeleton flash, no layout jump). `isFetching` is still
+    // available for callers that want a subtle "refreshing" indicator.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -159,6 +167,14 @@ export function useInfiniteApiQuery<T>(
       ),
     getNextPageParam: (lastPage) => getNextCursor(lastPage),
     enabled: opts.enabled ?? true,
+    // Same stale-while-revalidate behavior as useApiQuery: when
+    // filter chips change `params` (and therefore the queryKey), TQ
+    // would normally toss the old pages and re-skeleton from empty.
+    // keepPreviousData makes it render the prior page list while the
+    // new fetch runs in the background — page swaps under filter
+    // changes feel instant, and `isPending` (→ `isLoading`) only
+    // fires on cold cache.
+    placeholderData: keepPreviousData,
   });
 
   // Flatten pages into a single items array so the consumer doesn't have
