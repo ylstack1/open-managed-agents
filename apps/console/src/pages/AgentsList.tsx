@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { ChevronDownIcon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 
 import { useApi } from "../lib/api";
 import { useInfiniteApiQuery } from "../lib/useApiQuery";
 import { DataTable, type ColumnDef } from "../components/DataTable";
+import { FacetedFilter } from "../components/FacetedFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { ModelCard } from "@open-managed-agents/api-types";
 import type { AgentRecord as Agent } from "../types/agent";
@@ -108,10 +104,13 @@ function computePresetRange(
  *  weighs nothing; the toolbar reads as "nothing's filtered" without
  *  having to scan every chip for a value.
  *
- *  Built on shadcn DropdownMenu (Radix + Floating UI under the hood)
- *  for collision-aware positioning — auto-flips when there isn't
- *  enough room below, shifts to stay on screen, no hand-rolled
- *  positioning. */
+ *  Built on shadcn Popover (Radix + Floating UI under the hood) so
+ *  PopoverContent can host anything — cmdk Command for the
+ *  search-and-pick FacetedFilter (Status), a custom preset list with
+ *  date inputs (Created), etc. Earlier iteration used DropdownMenu but
+ *  cmdk Command nested inside Radix Menu fights for focus/keyboard
+ *  control. Popover with the same Floating UI primitive gives identical
+ *  auto-flip + collision behavior with no menu semantics in the way. */
 function FilterChip({
   label,
   active,
@@ -126,7 +125,7 @@ function FilterChip({
   children: React.ReactNode;
 }) {
   return (
-    <DropdownMenu>
+    <Popover>
       <div
         className={cn(
           "inline-flex items-center gap-1 h-8 text-sm shrink-0 transition-colors",
@@ -135,7 +134,7 @@ function FilterChip({
             : "text-fg-muted hover:text-fg",
         )}
       >
-        <DropdownMenuTrigger asChild>
+        <PopoverTrigger asChild>
           <button
             type="button"
             className={cn(
@@ -152,7 +151,7 @@ function FilterChip({
             )}
             {!active && <ChevronDownIcon className="size-3.5 opacity-60" />}
           </button>
-        </DropdownMenuTrigger>
+        </PopoverTrigger>
         {active && onClear && (
           <button
             type="button"
@@ -168,7 +167,7 @@ function FilterChip({
         )}
       </div>
       {children}
-    </DropdownMenu>
+    </Popover>
   );
 }
 
@@ -362,23 +361,23 @@ export function AgentsList() {
         display={statusDisplay}
         onClear={() => setStatus("any")}
       >
-        <DropdownMenuContent
+        {/* Status uses the shadcn faceted-filter pattern (Command
+            inside Popover). The Command primitive gives type-ahead
+            search even for 3 options — pays off the moment a page
+            picks an enum with 10+ values. */}
+        <PopoverContent
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          className="w-44"
+          className="w-48 p-0"
         >
-          <DropdownMenuRadioGroup
+          <FacetedFilter
+            options={STATUS_OPTIONS}
             value={status}
             onValueChange={(v) => setStatus(v as StatusValue)}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <DropdownMenuRadioItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
+            searchPlaceholder="Status..."
+          />
+        </PopoverContent>
       </FilterChip>
 
       <FilterChip
@@ -391,73 +390,69 @@ export function AgentsList() {
           setCustomBefore(undefined);
         }}
       >
-        <DropdownMenuContent
+        {/* Created uses a hand-rolled preset list + date inputs
+            rather than FacetedFilter because (a) the option list is
+            a fixed 7-item bucket palette where search adds zero
+            value, and (b) the Custom-range pair (From / To date
+            inputs) needs interactive children that cmdk Command's
+            list semantics don't accommodate cleanly. */}
+        <PopoverContent
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          className="w-60"
+          className="w-60 p-1"
         >
-          <DropdownMenuRadioGroup
-            value={createdPreset}
-            onValueChange={(v) => setCreatedPreset(v as CreatedPreset)}
-          >
-            {(Object.keys(CREATED_PRESET_LABELS) as CreatedPreset[]).map((preset) => (
-              <DropdownMenuRadioItem key={preset} value={preset}>
-                {CREATED_PRESET_LABELS[preset]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+          {(Object.keys(CREATED_PRESET_LABELS) as CreatedPreset[]).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setCreatedPreset(preset)}
+              className={cn(
+                "w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-sm",
+                "hover:bg-bg-surface",
+                createdPreset === preset && "text-fg font-medium",
+              )}
+            >
+              {CREATED_PRESET_LABELS[preset]}
+              {createdPreset === preset && <CheckIcon className="size-3.5 text-brand" />}
+            </button>
+          ))}
           {createdPreset === "custom" && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium pt-0">
-                Range
-              </DropdownMenuLabel>
-              {/* Date inputs sit inside the menu but must NOT close it
-                  on interaction — DropdownMenuItem closes by default;
-                  we use a plain div + stop pointer/key events so Radix's
-                  menu typeahead and focus traps don't intercept the
-                  input. */}
-              <div
-                className="px-2 pb-2 space-y-2"
-                onPointerDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <label className="block">
-                  <span className="text-xs text-fg-muted mb-1 block">From</span>
-                  <Input
-                    type="date"
-                    value={msToDateInput(customAfter)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCustomAfter(v ? new Date(v).getTime() : undefined);
-                    }}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-fg-muted mb-1 block">To</span>
-                  <Input
-                    type="date"
-                    value={msToDateInput(customBefore)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      // End of selected day so "<= that day" works as the
-                      // user expects (otherwise picking 2026-05-24 would
-                      // exclude that whole day since the filter is `<`).
-                      if (!v) {
-                        setCustomBefore(undefined);
-                        return;
-                      }
-                      const d = new Date(v);
-                      d.setDate(d.getDate() + 1);
-                      setCustomBefore(d.getTime());
-                    }}
-                  />
-                </label>
-              </div>
-            </>
+            <div className="mt-1 pt-2 border-t border-border space-y-2 px-1 pb-1">
+              <label className="block">
+                <span className="text-xs text-fg-muted mb-1 block">From</span>
+                <Input
+                  type="date"
+                  value={msToDateInput(customAfter)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCustomAfter(v ? new Date(v).getTime() : undefined);
+                  }}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-fg-muted mb-1 block">To</span>
+                <Input
+                  type="date"
+                  value={msToDateInput(customBefore)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // End of selected day so "<= that day" works as the
+                    // user expects (otherwise picking 2026-05-24 would
+                    // exclude that whole day since the filter is `<`).
+                    if (!v) {
+                      setCustomBefore(undefined);
+                      return;
+                    }
+                    const d = new Date(v);
+                    d.setDate(d.getDate() + 1);
+                    setCustomBefore(d.getTime());
+                  }}
+                />
+              </label>
+            </div>
           )}
-        </DropdownMenuContent>
+        </PopoverContent>
       </FilterChip>
     </>
   );
