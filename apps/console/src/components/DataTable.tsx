@@ -33,12 +33,6 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@/components/ui/table";
 
 import { EmptyState, type EmptyStateKind } from "./EmptyState";
 import { PageHeader } from "./PageHeader";
@@ -344,32 +338,52 @@ function ColumnVisibilityMenu<T>({ table }: { table: TanstackTable<T> }) {
   );
 }
 
-/** Same skeleton recipe as ListPage so loading state stays consistent
- *  across both list variants. */
+/** Skeleton state — matches the live row recipe exactly (pill-style
+ *  rows on a `border-separate border-spacing-y-1.5` table) so loading
+ *  → loaded has zero visual jump and no rogue table borders.
+ *
+ *  The earlier version reused shadcn's `<Table>` / `<TableRow>` /
+ *  `<TableCell>` primitives which carry `border-b` on every row; those
+ *  paint visible dark hairlines between skeleton rows that the loaded
+ *  view doesn't have. Rolling the markup by hand here gives us the
+ *  same `<table>` shape as the live body, just with a Skeleton inside
+ *  each cell instead of a value.
+ *
+ *  Width distribution is identical to ListPage's skeleton so list
+ *  pages on either chrome show the same loading texture. */
 function SkeletonRows({ colSpan }: { colSpan: number }) {
+  const cols = colSpan || 4;
   return (
-    <div className="pl-3 pr-4">
-      <Table>
-        <TableBody>
+    <div className="pl-3 pr-4 pb-4">
+      <table className="w-full table-fixed border-separate border-spacing-y-1.5">
+        <tbody>
           {Array.from({ length: 10 }).map((_, rowIdx) => (
-            <TableRow key={`sk-${rowIdx}`}>
-              {Array.from({ length: colSpan || 4 }).map((_, colIdx) => {
+            <tr
+              key={`sk-${rowIdx}`}
+              className={cn(
+                "bg-bg-surface/60",
+                "[&>td]:bg-transparent [&>td]:px-3 [&>td]:py-2 [&>td]:align-middle",
+                "[&>td:first-child]:rounded-l-lg",
+                "[&>td:last-child]:rounded-r-lg",
+              )}
+            >
+              {Array.from({ length: cols }).map((_, colIdx) => {
                 const widthClass = (() => {
                   if (colIdx === 0) return rowIdx % 2 === 0 ? "w-[55%]" : "w-[42%]";
-                  if (colIdx === colSpan - 1)
+                  if (colIdx === cols - 1)
                     return rowIdx % 2 === 0 ? "w-[38%]" : "w-[48%]";
                   return rowIdx % 3 === 0 ? "w-[85%]" : rowIdx % 3 === 1 ? "w-[72%]" : "w-[60%]";
                 })();
                 return (
-                  <TableCell key={colIdx}>
+                  <td key={colIdx}>
                     <Skeleton className={`h-3.5 ${widthClass}`} rounded="sm" />
-                  </TableCell>
+                  </td>
                 );
               })}
-            </TableRow>
+            </tr>
           ))}
-        </TableBody>
-      </Table>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -401,11 +415,11 @@ function LoadMoreRow({
   }, [loading, onLoadMore]);
 
   return (
-    <TableRow ref={ref} className="hover:bg-transparent">
-      <TableCell colSpan={colSpan} className="text-center py-4 text-xs text-fg-subtle">
+    <tr ref={ref}>
+      <td colSpan={colSpan} className="text-center py-4 text-xs text-fg-subtle">
         {loading ? "Loading more…" : " "}
-      </TableCell>
-    </TableRow>
+      </td>
+    </tr>
   );
 }
 
