@@ -133,12 +133,6 @@ export function AppSidebar() {
         </span>
       </SidebarHeader>
 
-      {/* Tenant switcher sits directly under the brand — Slack / Linear
-          pattern. Held inside the always-mounted row (no return-null
-          before fetch) so its presence doesn't shift the nav below it
-          when /v1/me/tenants resolves. */}
-      <TenantSwitcher />
-
       <SidebarContent className="bg-sidebar">
         {groups.map((group) => (
           <SidebarGroup key={group.label}>
@@ -168,7 +162,13 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
 
+      {/* Footer stacks tenant on top, user below. Both use the same
+          custom h-11 px-3 recipe as the brand row in SidebarHeader, so
+          collapse behavior matches the openma logo at the top: icon
+          stays at x=12, text hides via
+          `group-data-[collapsible=icon]:hidden`. */}
       <SidebarFooter className="bg-sidebar p-0">
+        <TenantSwitcher />
         <UserProfile />
       </SidebarFooter>
     </Sidebar>

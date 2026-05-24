@@ -12,25 +12,25 @@ import type { AppOutletContext } from "./AppShell";
  * `shrink-0` sibling. The slot literally cannot scroll, so the header
  * never moves; no sticky positioning required.
  *
- * All slots are optional. Skipping `title` is common for list pages —
- * the AppBreadcrumb in the top toolbar already identifies the route
- * ("Model Cards" sits above the panel), so repeating it as an `<h1>`
- * is duplicative. List pages typically pass only `actions` + `toolbar`
- * so the header row contains "+ New X" / search / filters and nothing
- * else. Detail pages still set a `title` for the real entity name
- * (e.g. an agent or memory store display name) that the breadcrumb's
- * generic label doesn't carry.
+ * Four slots, all optional:
+ *   - `title`        → page name (usually omitted; AppBreadcrumb
+ *                      already names the route at the top of the shell)
+ *   - `subtitle`     → optional one-liner under the title
+ *   - `actions`      → right-side button row (filters, CTAs)
+ *   - `toolbar`      → second row below the title for search / chips
+ *   - `tableHeader`  → bottom row for a frozen list-table header
+ *                      (Excel-style). DataTable renders its `<thead>`
+ *                      table here so column labels physically live
+ *                      outside the scroll container and CAN'T move.
  *
- * Returns null when the slot isn't mounted (e.g. rendered outside
- * AppShell), so pages won't crash if called from an unauthenticated
- * shell-less route, or when neither title/subtitle/actions/toolbar
- * are provided (nothing to render).
+ * Returns null when the slot isn't mounted, or when no slot has content.
  */
 interface PageHeaderProps {
   title?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
   toolbar?: ReactNode;
+  tableHeader?: ReactNode;
   className?: string;
 }
 
@@ -39,6 +39,7 @@ export function PageHeader({
   subtitle,
   actions,
   toolbar,
+  tableHeader,
   className,
 }: PageHeaderProps) {
   const ctx = useOutletContext<AppOutletContext | undefined>();
@@ -46,7 +47,7 @@ export function PageHeader({
   if (!slot) return null;
 
   const hasTopRow = !!title || !!subtitle || !!actions;
-  if (!hasTopRow && !toolbar) return null;
+  if (!hasTopRow && !toolbar && !tableHeader) return null;
 
   return createPortal(
     <div className={cn("bg-bg", className)}>
@@ -70,6 +71,11 @@ export function PageHeader({
       {toolbar && (
         <div className="flex items-center gap-2 px-4 py-3 md:px-8 lg:px-10 overflow-x-auto">
           {toolbar}
+        </div>
+      )}
+      {tableHeader && (
+        <div className="px-4 md:px-8 lg:px-10 border-t border-border">
+          {tableHeader}
         </div>
       )}
     </div>,

@@ -5,7 +5,6 @@ import {
   MonitorIcon,
   MoonIcon,
   SunIcon,
-  UserIcon,
 } from "lucide-react";
 
 import {
@@ -17,11 +16,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
 
 import { useAuth } from "../lib/auth";
 import { useTheme } from "../lib/theme";
@@ -29,18 +23,19 @@ import { authClient } from "../lib/auth-client";
 import { Avatar } from "./Avatar";
 
 /**
- * Bottom-of-sidebar user profile menu. Single click target (the user
- * avatar + name row) opens a dropdown grouping the three things a
- * signed-in user reaches for from the chrome:
+ * Bottom-of-sidebar user profile menu. Single click target opens a
+ * dropdown grouping the three account-scoped chrome items:
  *
  *   - Documentation (opens docs site in a new tab)
  *   - Theme picker (light / dark / system)
  *   - Sign out
  *
- * Replaces the previous footer stack of three separate rows
- * (Documentation SidebarMenuItem + ThemeToggle segmented control +
- * UserMenu button) — they belong together, and consolidating frees up
- * the footer for the chrome that actually navigates somewhere.
+ * The trigger row uses the SAME custom recipe the brand row in
+ * SidebarHeader uses — `h-11 px-3 flex items-center gap-2` with the
+ * avatar fixed at x=12 and the text collapsing via
+ * `group-data-[collapsible=icon]:hidden`. When the sidebar narrows to
+ * icon mode the avatar stays put and the openma-style row visually
+ * mirrors the brand row at the top.
  */
 const THEME_OPTIONS = [
   { value: "light" as const, label: "Light", Icon: SunIcon },
@@ -62,41 +57,31 @@ export function UserProfile() {
   const label = user.name || user.email || "Account";
 
   return (
-    <SidebarMenu className="px-2">
-      <SidebarMenuItem>
-        <DropdownMenu>
-          {/* Trigger uses shadcn `SidebarMenuButton size="lg"` so the
-              collapse behaviour is identical to every nav row — when
-              the sidebar shrinks to icon mode the button auto-resizes
-              to 32×32 + p-2, with only the leading 16-px icon
-              visible. Previously this was a custom `<button h-11 px-3>`
-              that just hid the text on collapse without resizing the
-              button itself — the avatar stayed at its expanded x
-              position while everything else snapped to centre, hence
-              the "behaviour is different" the user called out. */}
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" tooltip={label}>
-              <UserIcon className="size-4 opacity-80" />
-              <div className="flex-1 min-w-0 text-left leading-tight">
-                <div className="text-sm text-sidebar-foreground truncate">
-                  {user.name || user.email}
-                </div>
-                {user.email && user.name && (
-                  <div className="text-[11px] text-fg-subtle truncate">
-                    {user.email}
-                  </div>
-                )}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Account menu"
+          className="w-full h-11 px-3 flex items-center gap-2 hover:bg-sidebar-accent transition-colors text-left"
+        >
+          <Avatar name={label} size="sm" />
+          <div className="flex-1 min-w-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
+            <div className="text-sm text-sidebar-foreground truncate">
+              {user.name || user.email}
+            </div>
+            {user.email && user.name && (
+              <div className="text-[11px] text-fg-subtle truncate">
+                {user.email}
               </div>
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
+            )}
+          </div>
+        </button>
+      </DropdownMenuTrigger>
 
       <DropdownMenuContent
         side="top"
         align="start"
         className="w-56"
-        // Sidebar-relative trigger means the dropdown reaches across to
-        // the main canvas; collisionPadding keeps it inside the viewport
-        // when the sidebar is at the bottom edge.
         collisionPadding={8}
       >
         <DropdownMenuLabel className="font-normal">
@@ -139,10 +124,6 @@ export function UserProfile() {
               <DropdownMenuItem
                 key={value}
                 onClick={() => setTheme(value)}
-                // Keep the menu open on click so the user can preview
-                // each theme without re-opening. Use onSelect's default
-                // close-on-pick? No — leave open. (User reopens to pick
-                // again is more friction than benefit.)
                 onSelect={(e) => e.preventDefault()}
               >
                 <Icon className="size-4 opacity-80" />
@@ -163,8 +144,6 @@ export function UserProfile() {
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+    </DropdownMenu>
   );
 }

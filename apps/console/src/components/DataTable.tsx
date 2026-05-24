@@ -211,12 +211,64 @@ export function DataTable<T>({
 
   const filteredRows = table.getRowModel().rows;
   const isEmpty = !loading && filteredRows.length === 0;
-  const visibleColumnCount = table
-    .getAllColumns()
-    .filter((c) => c.getIsVisible()).length;
+  const visibleColumns = table.getAllColumns().filter((c) => c.getIsVisible());
+  const visibleColumnCount = visibleColumns.length;
+
+  // Excel-style frozen column header: rendered as its own <table> inside
+  // the PageHeader portal slot, physically OUTSIDE the scroll container.
+  // Body table below shares the same colgroup widths via
+  // `table-layout: fixed` so columns line up perfectly across both
+  // tables. TanStack drives the cell sizes via `column.getSize()`
+  // (defaults to 150 per column).
+  const colgroup = (
+    <colgroup>
+      {visibleColumns.map((col) => (
+        <col key={col.id} style={{ width: `${col.getSize()}px` }} />
+      ))}
+    </colgroup>
+  );
+
+  const frozenHeader = !loading && !isEmpty ? (
+    <table className="w-full table-fixed text-fg-muted">
+      {colgroup}
+      <thead>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <tr key={headerGroup.id} className="border-b border-border">
+            {headerGroup.headers.map((header) => (
+              <th
+                key={header.id}
+                className="h-9 px-3 text-left text-xs font-medium align-middle whitespace-nowrap"
+              >
+                {header.isPlaceholder ? null : (
+                  <div className="flex items-center gap-1">
+                    <SortableHeader column={header.column}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </SortableHeader>
+                    {header.column.getCanFilter() && (
+                      <ColumnFilterPopover column={header.column} />
+                    )}
+                  </div>
+                )}
+              </th>
+            ))}
+          </tr>
+        ))}
+      </thead>
+    </table>
+  ) : undefined;
 
   return (
-    <Page header={<PageHeader title={title} subtitle={subtitle} actions={actions} toolbar={toolbar} />}>
+    <Page
+      header={
+        <PageHeader
+          title={title}
+          subtitle={subtitle}
+          actions={actions}
+          toolbar={toolbar}
+          tableHeader={frozenHeader}
+        />
+      }
+    >
       {loading ? (
         <SkeletonRows colSpan={visibleColumnCount} />
       ) : isEmpty ? (
@@ -232,58 +284,32 @@ export function DataTable<T>({
         </div>
       ) : (
         <div className="px-4 md:px-8 lg:px-10">
-          {/* `border-separate` + `border-spacing-y` turns each <tr> into
-              a visually-separate pill — there's a small vertical gap
-              between rows that the row bg fills as a rounded surface.
-              Each pill has its first cell rounded-l-lg and last cell
-              rounded-r-lg so the corners only round at the row edges,
-              not on every cell. Header stays plain (no pill) so it
-              reads as toolbar above the list. */}
-          <Table className="border-separate border-spacing-y-1.5">
-            <TableHeader className="sticky top-0 z-10 bg-bg/95 backdrop-blur supports-[backdrop-filter]:bg-bg/80 text-fg-muted">
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow
-                  key={headerGroup.id}
-                  className="hover:bg-transparent border-b border-border"
-                >
-                  {headerGroup.headers.map((header) => (
-                    <TableHead key={header.id} className="h-9 text-xs font-medium">
-                      {header.isPlaceholder ? null : (
-                        <div className="flex items-center gap-1">
-                          <SortableHeader column={header.column}>
-                            {flexRender(header.column.columnDef.header, header.getContext())}
-                          </SortableHeader>
-                          {header.column.getCanFilter() && (
-                            <ColumnFilterPopover column={header.column} />
-                          )}
-                        </div>
-                      )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
+          {/* Body table: same colgroup as the frozen header so columns
+              align. `border-separate border-spacing-y-1.5` turns each
+              <tr> into a pill (rounded ends, gap between rows). */}
+          <table className="w-full table-fixed border-separate border-spacing-y-1.5">
+            {colgroup}
+            <tbody>
               {filteredRows.map((row) => {
                 const cells = row.getVisibleCells();
                 return (
-                  <TableRow
+                  <tr
                     key={row.id}
                     onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                     className={cn(
                       "bg-bg-surface/60 hover:bg-bg-surface transition-colors",
-                      "[&>td]:border-y [&>td]:border-border [&>td]:bg-transparent",
+                      "[&>td]:border-y [&>td]:border-border [&>td]:bg-transparent [&>td]:px-3 [&>td]:py-2 [&>td]:align-middle [&>td]:text-sm",
                       "[&>td:first-child]:border-l [&>td:first-child]:rounded-l-lg",
                       "[&>td:last-child]:border-r [&>td:last-child]:rounded-r-lg",
                       onRowClick && "cursor-pointer",
                     )}
                   >
                     {cells.map((cell) => (
-                      <TableCell key={cell.id}>
+                      <td key={cell.id} className="truncate">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
+                      </td>
                     ))}
-                  </TableRow>
+                  </tr>
                 );
               })}
               {onLoadMore && hasMore && (
@@ -293,8 +319,8 @@ export function DataTable<T>({
                   onLoadMore={onLoadMore}
                 />
               )}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
         </div>
       )}
 
