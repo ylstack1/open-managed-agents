@@ -335,6 +335,252 @@ runtimeDaemonRoutes.post("/exchange", async (c) => {
   });
 });
 
+// GET /agents/runtime/me — daemon fetches its own runtime row + authorized tenants.
+//
+// Auth: same Bearer sk_machine_* the daemon uses for /_attach. The runtime
+// identity is implicit in the token; no path param needed.
+//
+// Used by step 3 of the rollout: when a v1 daemon (single `agentApiKey` on
+// disk) boots and discovers its credentials.json has no `v: 2` marker, it
+// hits this endpoint to enumerate authorized tenants for its runtime so it
+// can synthesize a one-tenant CredentialsV2 stub locally. The actual
+// per-tenant `oma_*` plaintext keys come from /refresh — this endpoint
+// returns only `{id, name, role}` per tenant (no secret material).
+//
+// Lives at /agents/runtime/* (not /v1/runtimes/:id) because the daemon
+// auth is bearer sk_machine_*, not the user-auth-middleware that /v1/*
+// enforces. The plan's reference to "GET /v1/runtimes/${runtimeId}" was
+// imprecise — daemon path is mandatory.
+runtimeDaemonRoutes.get("/me", async (c) => {
+  const ok = await authenticateRuntimeToken(c.env, c.req.header("authorization") ?? "");
+  if (!ok) return c.json({ error: "unauthorized" }, 401);
+
+  const runtime = await c.env.AUTH_DB
+    .prepare(
+      `SELECT id, machine_id, hostname, os, version, status, last_heartbeat, created_at
+       FROM "runtimes" WHERE id = ?`,
+    )
+    .bind(ok.runtime_id)
+    .first<{
+      id: string;
+      machine_id: string;
+      hostname: string;
+      os: string;
+      version: string;
+      status: string;
+      last_heartbeat: number | null;
+      created_at: number;
+    }>();
+  if (!runtime) return c.json({ error: "runtime not found" }, 404);
+
+  // tenants[] — left join membership for role (so a runtime authorized
+  // for a tenant the user has since left still shows the row, with role
+  // null. The daemon ignores those entries; the next /refresh will revoke).
+  const { results: tenantRows } = await c.env.AUTH_DB
+    .prepare(
+      `SELECT rt.tenant_id AS id, t.name AS name, m.role AS role
+       FROM "runtime_tenants" rt
+       LEFT JOIN "tenant" t ON t.id = rt.tenant_id
+       LEFT JOIN "membership" m ON m.tenant_id = rt.tenant_id AND m.user_id = ?
+       WHERE rt.runtime_id = ? AND rt.revoked_at IS NULL`,
+    )
+    .bind(ok.user_id, ok.runtime_id)
+    .all<{ id: string; name: string | null; role: string | null }>();
+
+  return c.json({
+    runtime,
+    tenants: (tenantRows ?? []).map((r) => ({
+      id: r.id,
+      name: r.name ?? r.id,
+      role: r.role ?? "member",
+    })),
+  });
+});
+
+// POST /agents/runtime/:id/refresh — daemon asks the server to reconcile
+// its authorized tenants against the user's current memberships.
+//
+// Always rotates ALL live (runtime, tenant) keys on every call. Trade-off:
+//   - Pro: simple, single response shape — `agent_api_key` is always
+//     plaintext for every returned tenant. Daemon just replaces its
+//     in-memory map. No "did we get plaintext this time?" branch.
+//   - Pro: stale daemon credentials self-heal — if a daemon lost its on-disk
+//     creds and re-ran `oma bridge refresh` from scratch, this rotates
+//     every key and hands them back.
+//   - Con: more KV churn (N puts + N+1 deletes per refresh). Refresh is rare
+//     (manual user-triggered op), so this cost is fine.
+// Soak alternative — "return existing rows without plaintext, rotate only on
+// __legacy__ or KV miss" — is documented in the plan but rejected here for
+// the simplicity reason above.
+runtimeDaemonRoutes.post("/:id/refresh", async (c) => {
+  const ok = await authenticateRuntimeToken(c.env, c.req.header("authorization") ?? "");
+  if (!ok) return c.json({ error: "unauthorized" }, 401);
+  // Match the path param to the token-bound runtime — refusing 404 (not 403)
+  // for the same non-oracle reason as the bundle route.
+  if (ok.runtime_id !== c.req.param("id")) {
+    return c.json({ error: "not found" }, 404);
+  }
+
+  const runtime = await c.env.AUTH_DB
+    .prepare(`SELECT hostname FROM "runtimes" WHERE id = ?`)
+    .bind(ok.runtime_id)
+    .first<{ hostname: string }>();
+  if (!runtime) return c.json({ error: "runtime not found" }, 404);
+
+  const memberships = await c.env.AUTH_DB
+    .prepare(`SELECT tenant_id, role FROM "membership" WHERE user_id = ?`)
+    .bind(ok.user_id)
+    .all<{ tenant_id: string; role: string }>();
+  const membershipRows = memberships.results ?? [];
+  const membershipById = new Map<string, { tenant_id: string; role: string }>();
+  for (const m of membershipRows) membershipById.set(m.tenant_id, m);
+
+  const liveTenantRows = await c.env.AUTH_DB
+    .prepare(
+      `SELECT tenant_id, agent_api_key_id FROM "runtime_tenants"
+       WHERE runtime_id = ? AND revoked_at IS NULL`,
+    )
+    .bind(ok.runtime_id)
+    .all<{ tenant_id: string; agent_api_key_id: string }>();
+  const liveById = new Map<string, string>(); // tenant_id → agent_api_key_id
+  for (const r of liveTenantRows.results ?? []) {
+    liveById.set(r.tenant_id, r.agent_api_key_id);
+  }
+
+  const toAdd = membershipRows.filter((m) => !liveById.has(m.tenant_id));
+  const toRevoke: Array<{ tenant_id: string; agent_api_key_id: string }> = [];
+  for (const [tid, akid] of liveById.entries()) {
+    if (!membershipById.has(tid)) toRevoke.push({ tenant_id: tid, agent_api_key_id: akid });
+  }
+
+  const kv = c.var.services.kv;
+  const now = Math.floor(Date.now() / 1000);
+  const mintedKeys = new Map<string, string>(); // tenant_id → plaintext
+
+  // Revoke first so a tenant that's both being removed and re-added (would
+  // never happen via membership flips, but defensive against UPSERT races)
+  // doesn't see its newly-minted key wiped.
+  for (const r of toRevoke) {
+    await revokeAgentApiKey(kv, r.agent_api_key_id);
+    await c.env.AUTH_DB
+      .prepare(
+        `UPDATE "runtime_tenants" SET revoked_at = ? WHERE runtime_id = ? AND tenant_id = ?`,
+      )
+      .bind(now, ok.runtime_id, r.tenant_id)
+      .run();
+  }
+
+  // Rotate existing live rows — revoke old key, mint new, replace api_key_id.
+  // Skipped for entries already in toRevoke (those are gone now).
+  const toRotate = membershipRows.filter((m) => liveById.has(m.tenant_id));
+  for (const m of toRotate) {
+    const oldAkid = liveById.get(m.tenant_id)!;
+    await revokeAgentApiKey(kv, oldAkid);
+    const { plain, id: newAkid } = await issueAgentApiKey(kv, ok.user_id, m.tenant_id, runtime.hostname);
+    mintedKeys.set(m.tenant_id, plain);
+    await c.env.AUTH_DB
+      .prepare(
+        `UPDATE "runtime_tenants" SET agent_api_key_id = ? WHERE runtime_id = ? AND tenant_id = ?`,
+      )
+      .bind(newAkid, ok.runtime_id, m.tenant_id)
+      .run();
+  }
+
+  // Add fresh rows for new memberships.
+  for (const m of toAdd) {
+    const { plain, id: newAkid } = await issueAgentApiKey(kv, ok.user_id, m.tenant_id, runtime.hostname);
+    mintedKeys.set(m.tenant_id, plain);
+    await c.env.AUTH_DB
+      .prepare(
+        `INSERT INTO "runtime_tenants" (runtime_id, tenant_id, agent_api_key_id, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, NULL)
+         ON CONFLICT (runtime_id, tenant_id)
+         DO UPDATE SET agent_api_key_id = excluded.agent_api_key_id, revoked_at = NULL`,
+      )
+      .bind(ok.runtime_id, m.tenant_id, newAkid, now)
+      .run();
+  }
+
+  // Batch tenant names for the response.
+  const tenantIds = membershipRows.map((m) => m.tenant_id);
+  const tenantNames = new Map<string, string>();
+  if (tenantIds.length > 0) {
+    const placeholders = tenantIds.map(() => "?").join(",");
+    const { results: nameRows } = await c.env.AUTH_DB
+      .prepare(`SELECT id, name FROM "tenant" WHERE id IN (${placeholders})`)
+      .bind(...tenantIds)
+      .all<{ id: string; name: string }>();
+    for (const t of nameRows ?? []) tenantNames.set(t.id, t.name);
+  }
+
+  // Best-effort cache invalidation: tell RuntimeRoom DO to re-read its
+  // authorized-tenants cache. Tolerant of binding absence (test envs) and
+  // network errors — the cache is a perf hint, not a correctness gate; the
+  // DB rows are authoritative on the next access.
+  const room = (c.env as unknown as { RUNTIME_ROOM?: DurableObjectNamespace }).RUNTIME_ROOM;
+  if (room) {
+    try {
+      const stub = room.get(room.idFromName(ok.runtime_id));
+      await (stub as unknown as { refreshAuthorizedTenants(): Promise<void> })
+        .refreshAuthorizedTenants();
+    } catch {
+      // best-effort
+    }
+  }
+
+  return c.json({
+    tenants: membershipRows.map((m) => ({
+      id: m.tenant_id,
+      name: tenantNames.get(m.tenant_id) ?? m.tenant_id,
+      role: m.role,
+      agent_api_key: mintedKeys.get(m.tenant_id)!,
+    })),
+    added: toAdd.map((m) => m.tenant_id),
+    revoked: toRevoke.map((r) => r.tenant_id),
+  });
+});
+
+/**
+ * Revoke an `oma_*` key previously minted by `issueAgentApiKey`. Looks up the
+ * hash via the `akid:<id>` index, then mirror-reverses the writes:
+ *   - delete `apikey:<hash>` (auth lookup row)
+ *   - splice the matching entry out of `t:<tenant>:apikeys` (per-tenant index)
+ *   - delete `akid:<id>` (the secondary index itself)
+ * Tolerant of a missing `akid:<id>` row (already revoked, or row predates the
+ * index write added in step 1) — we just skip the cleanup; the soft-delete on
+ * `runtime_tenants` is still authoritative.
+ */
+async function revokeAgentApiKey(kv: KvStore, apiKeyId: string): Promise<void> {
+  if (!apiKeyId || apiKeyId === "__legacy__") {
+    // Legacy backfill sentinel — no real key was stored, nothing to revoke.
+    return;
+  }
+  const raw = await kv.get(`akid:${apiKeyId}`);
+  if (!raw) return;
+  let parsed: { hash?: string; tenant_id?: string };
+  try {
+    parsed = JSON.parse(raw) as { hash?: string; tenant_id?: string };
+  } catch {
+    return;
+  }
+  const { hash, tenant_id } = parsed;
+  if (hash) await kv.delete(`apikey:${hash}`);
+  if (tenant_id) {
+    const indexKey = `t:${tenant_id}:apikeys`;
+    const existing = await kv.get(indexKey);
+    if (existing) {
+      try {
+        const index = JSON.parse(existing) as Array<{ id?: string }>;
+        const next = index.filter((e) => e.id !== apiKeyId);
+        await kv.put(indexKey, JSON.stringify(next));
+      } catch {
+        // index row corrupt — leave alone; reading code already tolerates parse errors.
+      }
+    }
+  }
+  await kv.delete(`akid:${apiKeyId}`);
+}
+
 /**
  * Mint an `oma_*` API key for daemon-spawned ACP children. Stored same way as
  * user-created keys (KV `apikey:<hash>`) so the existing /v1/* auth middleware
