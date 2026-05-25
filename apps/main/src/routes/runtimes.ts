@@ -170,6 +170,18 @@ runtimesRoutes.delete("/:id", async (c) => {
 // ─── Daemon-facing (no authMiddleware) ────────────────────────────────────
 
 // POST /agents/runtime/exchange — daemon swaps code for runtime token + agent API key.
+// Dual-shape response:
+//   - v1 clients (no `multi_tenant` flag): `{ runtime_id, token, agent_api_key }`
+//     where `agent_api_key` is the key bound to the user's active tenant
+//     (the one captured by the original /connect-runtime call).
+//   - v2 clients (`multi_tenant: true`): `{ runtime_id, token, tenants: [...] }`
+//     with one row per user membership, each carrying its own freshly-minted
+//     `oma_*` key. The daemon picks the right key per spawned ACP child.
+//
+// Either way the server-side authorization is identical — `runtime_tenants`
+// gets one row per membership; only the response shape differs. Step 2 of
+// the rollout will flip enforcement to require per-message `tenant_id` and
+// retire the v1 branch. See plan: atomic-seeking-seal.md.
 runtimeDaemonRoutes.post("/exchange", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
     code?: string;
@@ -178,9 +190,10 @@ runtimeDaemonRoutes.post("/exchange", async (c) => {
     hostname?: string;
     os?: string;
     version?: string;
+    multi_tenant?: boolean;
   };
 
-  const { code, state, machine_id, hostname, os, version } = body;
+  const { code, state, machine_id, hostname, os, version, multi_tenant } = body;
   if (!code || !state || !machine_id || !hostname || !os || !version) {
     return c.json(
       { error: "code, state, machine_id, hostname, os, version all required" },
@@ -245,15 +258,80 @@ runtimeDaemonRoutes.post("/exchange", async (c) => {
     .bind(tokenId, runtimeId, tokenHash, row.user_id, now)
     .run();
 
-  // Mint an agent-side API key the daemon will hand to ACP children for MCP
-  // proxy auth. Same shape as user-created keys (KV `apikey:<sha256>` row),
-  // so existing authMiddleware accepts it. Plaintext returned once.
-  const agentApiKey = await issueAgentApiKey(c.var.services.kv, row.user_id, row.tenant_id, hostname);
+  // Authorize this runtime for every tenant the user belongs to. Mint a
+  // fresh `oma_*` per (runtime, tenant) so the daemon can hand the right
+  // key to each spawned ACP child. /exchange always re-mints (it's the
+  // first-touch path; legacy backfill rows get replaced; an unusual
+  // re-registration with an existing real id also gets rotated).
+  const memberships = await c.env.AUTH_DB
+    .prepare(`SELECT tenant_id, role FROM "membership" WHERE user_id = ?`)
+    .bind(row.user_id)
+    .all<{ tenant_id: string; role: string }>();
+  const membershipRows = memberships.results ?? [];
+  // Fallback: if the user has no membership rows yet (older accounts pre-0005),
+  // synthesize one from the connect-code's tenant so the response is non-empty
+  // and the runtime still gets an authorized row.
+  if (membershipRows.length === 0) {
+    membershipRows.push({ tenant_id: row.tenant_id, role: "owner" });
+  }
 
+  const mintedKeys = new Map<string, string>(); // tenant_id → plaintext oma_*
+  for (const m of membershipRows) {
+    const { plain, id: apiKeyId } = await issueAgentApiKey(
+      c.var.services.kv,
+      row.user_id,
+      m.tenant_id,
+      hostname,
+    );
+    mintedKeys.set(m.tenant_id, plain);
+
+    // Upsert into runtime_tenants. SQLite UPSERT keeps the original
+    // created_at on conflict while always rotating to the freshly-minted
+    // api_key id (replacing __legacy__ or any stale real id). Clearing
+    // revoked_at re-activates rows that an earlier /refresh soft-deleted.
+    await c.env.AUTH_DB
+      .prepare(
+        `INSERT INTO "runtime_tenants" (runtime_id, tenant_id, agent_api_key_id, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, NULL)
+         ON CONFLICT (runtime_id, tenant_id)
+         DO UPDATE SET agent_api_key_id = excluded.agent_api_key_id, revoked_at = NULL`,
+      )
+      .bind(runtimeId, m.tenant_id, apiKeyId, now)
+      .run();
+  }
+
+  // Batch-fetch tenant display names. Single IN(?,?,?...) query keeps
+  // this O(1) round trips regardless of membership size.
+  const tenantIds = membershipRows.map((m) => m.tenant_id);
+  const tenantNames = new Map<string, string>();
+  if (tenantIds.length > 0) {
+    const placeholders = tenantIds.map(() => "?").join(",");
+    const { results: tenantRows } = await c.env.AUTH_DB
+      .prepare(`SELECT id, name FROM "tenant" WHERE id IN (${placeholders})`)
+      .bind(...tenantIds)
+      .all<{ id: string; name: string }>();
+    for (const t of tenantRows ?? []) tenantNames.set(t.id, t.name);
+  }
+
+  if (multi_tenant === true) {
+    const tenants = membershipRows.map((m) => ({
+      id: m.tenant_id,
+      name: tenantNames.get(m.tenant_id) ?? m.tenant_id,
+      role: m.role,
+      agent_api_key: mintedKeys.get(m.tenant_id)!,
+    }));
+    return c.json({ runtime_id: runtimeId, token: tokenPlain, tenants });
+  }
+
+  // v1 fall-through: return the key for the user's active tenant (the one
+  // pinned by /connect-runtime). Always present because we just minted it
+  // above. Falls back to whatever the first membership was if the active
+  // tenant somehow isn't in the membership set — defensive, shouldn't fire.
+  const v1Key = mintedKeys.get(row.tenant_id) ?? mintedKeys.values().next().value!;
   return c.json({
     runtime_id: runtimeId,
     token: tokenPlain,
-    agent_api_key: agentApiKey,
+    agent_api_key: v1Key,
   });
 });
 
@@ -261,13 +339,19 @@ runtimeDaemonRoutes.post("/exchange", async (c) => {
  * Mint an `oma_*` API key for daemon-spawned ACP children. Stored same way as
  * user-created keys (KV `apikey:<hash>`) so the existing /v1/* auth middleware
  * accepts it. Plaintext returned to caller once and never re-issued.
+ *
+ * Also writes a secondary index `akid:<id>` → `{hash, tenant_id}` so the
+ * upcoming `/refresh` endpoint can look up an existing live key's hash
+ * (to delete it on revoke) without having to scan `t:<tenant>:apikeys`.
+ * Returning both the plaintext AND the id lets callers persist the id in
+ * `runtime_tenants` so future lookups have a stable handle.
  */
 async function issueAgentApiKey(
   kv: KvStore,
   userId: string,
   tenantId: string,
   displayLabel: string,
-): Promise<string> {
+): Promise<{ plain: string; id: string }> {
   const plain = generateAgentApiKey();
   const hash = await sha256(plain);
   const id = `ak_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -280,12 +364,17 @@ async function issueAgentApiKey(
     `apikey:${hash}`,
     JSON.stringify({ id, tenant_id: tenantId, user_id: userId, name: `Local runtime (${displayLabel})`, created_at: now }),
   );
+  // Secondary index keyed by the ak_* id so /refresh can look up an
+  // existing live key's hash without rotating. Without this, /refresh
+  // would have to rotate every key on every call to obtain the
+  // plaintext-coupled hash for the cleanup path.
+  await kv.put(`akid:${id}`, JSON.stringify({ hash, tenant_id: tenantId }));
   const indexKey = `t:${tenantId}:apikeys`;
   const existing = await kv.get(indexKey);
   const index = existing ? (JSON.parse(existing) as Array<unknown>) : [];
   index.push({ id, name: `Local runtime (${displayLabel})`, prefix: plain.slice(0, 8), hash, created_at: now });
   await kv.put(indexKey, JSON.stringify(index));
-  return plain;
+  return { plain, id };
 }
 
 function safeJsonParse(s: string | null | undefined): unknown {
@@ -521,12 +610,24 @@ async function loadSkillSkillMd(
 /**
  * Helper for the WS /agents/runtime/_attach upgrade route in index.ts.
  * Validates a Bearer sk_machine_* against runtime_tokens, returns the
- * runtime row on success.
+ * runtime row on success — plus the full set of tenants the runtime is
+ * authorized for via the `runtime_tenants` join table.
+ *
+ * `tenant_id` is kept for back-compat: today's callers (bundle route,
+ * _attach upgrade) still resolve through `runtimes.owner_tenant_id` (the
+ * "primary" / first tenant the runtime was registered with). The new
+ * `authorized_tenants` set is what step 2 of the rollout will check
+ * against per-message `tenant_id` on WS frames.
  */
 export async function authenticateRuntimeToken(
   env: Env,
   bearer: string,
-): Promise<{ runtime_id: string; user_id: string; tenant_id: string } | null> {
+): Promise<{
+  runtime_id: string;
+  user_id: string;
+  tenant_id: string;
+  authorized_tenants: Set<string>;
+} | null> {
   const token = bearer.startsWith("Bearer ") ? bearer.slice(7) : bearer;
   if (!token.startsWith("sk_machine_")) return null;
   const hash = await sha256(token);
@@ -539,11 +640,20 @@ export async function authenticateRuntimeToken(
     .bind(hash)
     .first<{ runtime_id: string; user_id: string; tenant_id: string }>();
   if (!row) return null;
+  const tenantRows = await env.AUTH_DB
+    .prepare(`SELECT tenant_id FROM "runtime_tenants" WHERE runtime_id = ? AND revoked_at IS NULL`)
+    .bind(row.runtime_id)
+    .all<{ tenant_id: string }>();
+  const authorized_tenants = new Set((tenantRows.results ?? []).map((r) => r.tenant_id));
+  // Defensive: backfill rows always include owner_tenant_id, but if a
+  // runtime predates the join-table backfill for any reason, fall back
+  // to its primary tenant so step-1 callers never see an empty set.
+  if (authorized_tenants.size === 0) authorized_tenants.add(row.tenant_id);
   // Best-effort last_used_at refresh; don't block on it.
   env.AUTH_DB
     .prepare(`UPDATE "runtime_tokens" SET last_used_at = unixepoch() WHERE token_hash = ?`)
     .bind(hash)
     .run()
     .catch(() => {});
-  return row;
+  return { ...row, authorized_tenants };
 }

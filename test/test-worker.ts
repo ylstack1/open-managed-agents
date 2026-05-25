@@ -67,6 +67,8 @@ import schema0015 from "../apps/main/migrations/0015_model_card_handle_rename.sq
 import schema0016 from "../apps/main/migrations/0016_session_terminated_at.sql?raw";
 // @ts-expect-error vitest resolves SQL via ?raw
 import schema0017 from "../apps/main/migrations/0017_usage_events.sql?raw";
+// @ts-expect-error vitest resolves SQL via ?raw
+import schema0018 from "../apps/main/migrations/0018_runtime_multi_tenant.sql?raw";
 // INTEGRATIONS_DB schema — separate D1 holding linear_*/github_*/slack_*.
 // @ts-expect-error vitest resolves SQL via ?raw
 import integrationsSchema from "../apps/main/migrations-integrations/0001_schema.sql?raw";
@@ -91,6 +93,7 @@ const MIGRATIONS_RAW: string[] = [
   schema0015 as string,
   schema0016 as string,
   schema0017 as string,
+  schema0018 as string,
 ];
 
 const INTEGRATIONS_MIGRATIONS_RAW: string[] = [
